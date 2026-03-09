@@ -49,7 +49,7 @@ class Executor:
         """Get input field element - try multiple selectors"""
         # Try each selector individually
         input_selectors = SELECTORS["input_field"].split(", ")
-        
+
         for selector in input_selectors:
             try:
                 input_field = await self.page.wait_for_selector(
@@ -58,11 +58,10 @@ class Executor:
                     timeout=2000
                 )
                 if input_field:
-                    print(f"  [Executor] Found input with selector: {selector.strip()}")
                     return input_field
             except Exception:
                 continue
-        
+
         # If no selector worked, raise error
         raise Exception(f"Could not find input field with any selector: {input_selectors}")
 
@@ -97,29 +96,25 @@ class Executor:
     async def _send_message(self) -> None:
         """Press Enter to send message"""
         input_field = await self._get_input_field()
-        
+
         # Try pressing Enter first
         try:
             await input_field.press("Enter")
-            print("  → Sent via Enter key")
         except Exception as e:
-            print(f"  ⚠ Enter key failed: {e}")
             # If Enter doesn't work, try clicking the send button
             try:
                 send_btn = await self.page.query_selector(SELECTORS["send_button"])
                 if send_btn:
                     is_visible = await send_btn.is_visible()
-                    print(f"  → Found send button, visible: {is_visible}")
                     if is_visible:
                         await send_btn.click()
-                        print("  → Sent via button click")
             except Exception as e2:
-                print(f"  ⚠ Send button failed: {e2}")
+                pass
 
     async def send_message(self, text: str, incoming_message_length: int = 0) -> None:
         """
         Send a complete message with human-like behavior.
-        
+
         Args:
             text: Message text to send
             incoming_message_length: Length of incoming message (for thinking delay)
@@ -127,20 +122,18 @@ class Executor:
         try:
             # Focus input
             await self._focus_input()
-            
+
             # Thinking delay (if responding to something)
             if incoming_message_length > 0:
                 thinking_delay = self._calculate_thinking_delay(incoming_message_length)
                 await asyncio.sleep(thinking_delay / 1000)
-            
+
             # Type the message
             await self._type_text(text)
-            
+
             # Send
             await self._send_message()
-            
-            print(f"✓ Message sent: {text[:50]}...")
-            
+
         except Exception as e:
             print(f"✗ Failed to send message: {e}")
             raise
@@ -154,9 +147,7 @@ class Executor:
             await self._focus_input()
             await self._type_text(text)
             await self._send_message()
-            
-            print(f"✓ Quick send: {text}")
-            
+
         except Exception as e:
             print(f"✗ Failed to quick send: {e}")
             raise

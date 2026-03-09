@@ -60,46 +60,50 @@ class Observer:
         Returns list of message dicts with role and content.
         """
         import time
-        
+
         new_messages = []
-        
+
         # Get all message elements
         try:
             all_messages = await self.page.query_selector_all(
                 f"{SELECTORS['incoming_msg']}, {SELECTORS['outgoing_msg']}"
             )
-        except Exception:
+        except Exception as e:
+            print(f"  [Observer] Ошибка поиска сообщений: {e}")
             return new_messages
 
         for msg_element in all_messages:
             msg_id = await self._get_message_id(msg_element)
-            
+
             # Skip already seen messages
             if msg_id in self.seen_messages:
                 continue
-            
+
             # Determine message role
             is_outgoing = await self._is_outgoing_message(msg_element)
             role = "own" if is_outgoing else "other"
-            
+
             # Extract content
             content = await self._extract_message_text(msg_element)
-            
+
             # Skip system messages and empty content
             if not content or self._is_system_message(content):
                 self.seen_messages.add(msg_id)
                 continue
-            
+
             # Create message record
             msg_data = {
                 "role": role,
                 "content": content,
                 "timestamp": time.time()
             }
-            
+
             new_messages.append(msg_data)
             self.seen_messages.add(msg_id)
             self.last_message_id = msg_id
+
+        if new_messages:
+            print(f"  [Observer] Найдено новых сообщений: {len(new_messages)}")
 
         return new_messages
 
@@ -109,16 +113,15 @@ class Observer:
             # Check for outgoing message class
             classes = await element.get_attribute("class")
             if classes:
-                if "outgoing" in classes.lower() or "own" in classes.lower():
+                # Nekto.me uses "self" for own messages
+                if "self" in classes.lower():
                     return True
-                if "incoming" in classes.lower() or "other" in classes.lower():
+                if "nekto" in classes.lower():
                     return False
-            
-            # Try to find avatar/icon indicator
-            # (You) icon typically indicates outgoing
-            return False
         except Exception:
-            return False
+            pass
+        
+        return False
 
     def _is_system_message(self, text: str) -> bool:
         """Check if message is a system notification"""

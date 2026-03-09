@@ -27,8 +27,8 @@ DELAY_VARIANCE = float(os.getenv("DELAY_VARIANCE", "0.20"))
 # Nekto.me Selectors
 SELECTORS = {
     "messages_container": ".window_chat_block, .messages-container, .chat-messages",
-    "incoming_msg": ".message.from-interlocutor, .message.left, .msg:not(.self), [class*='incoming']",
-    "outgoing_msg": ".message.from-me, .message.right, .msg.self, [class*='outgoing']",
+    "incoming_msg": ".mess_block.nekto",
+    "outgoing_msg": ".mess_block.self",
     "input_field": ".emojionearea-editor[contenteditable='true'], #message_textarea, textarea[data-type='input']",
     "send_button": ".send_btn_circle, .sendMessageBtn, #sendMessageBtn, button.send",
     "new_chat_button": ".talk_over_button, #searchCompanyBtn, .search-btn, button:has-text('Начать чат'), button:has-text('Начать')",
