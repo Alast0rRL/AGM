@@ -1,0 +1,73 @@
+2026-03-10 01:03:58,633 - WARNING - ✗ Failed to connect: BrowserType.connect_over_cdp: connect ECONNREFUSED 127.0.0.1:9222
+Call log:
+  - <ws preparing> retrieving websocket url from http://127.0.0.1:9222
+
+2026-03-10 01:03:58,633 - WARNING - Trying to launch Chrome...
+2026-03-10 01:03:59,047 - INFO - ✓ Launched Chrome on port 9222
+2026-03-10 01:04:02,943 - INFO - ✓ Navigated to nekto.me/chat/
+2026-03-10 01:04:02,950 - INFO - ✓ Bot initialized
+2026-03-10 01:04:02,951 - INFO - Amor-Bot запущен
+2026-03-10 01:04:02,951 - INFO - → Starting new chat...
+2026-03-10 01:04:02,962 - INFO - === КОМАНДЫ ===
+2026-03-10 01:04:02,962 - INFO - /stop - Пауза, /start - Продолжить, /send <текст> - Отправить
+2026-03-10 01:04:02,962 - INFO - /exit - Выйти, /skip - Пропустить чат
+2026-03-10 01:04:02,996 - INFO - → Found chat start button: #searchCompanyBtn
+2026-03-10 01:04:12,155 - INFO - → Sending: Привет
+2026-03-10 01:04:14,899 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:14,899 - INFO - → Sending: Сколько лет
+2026-03-10 01:04:16,014 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:18,021 - INFO - → Starting new chat...
+2026-03-10 01:04:18,059 - INFO - ✓ Chat already active, 3 messages found
+2026-03-10 01:04:18,070 - INFO - → Age question already sent
+2026-03-10 01:04:18,076 - INFO - → Waiting for age response...
+2026-03-10 01:04:18,076 - DEBUG - Cleared observer history
+2026-03-10 01:04:18,137 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:18,653 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:20,659 - INFO - → Starting new chat...
+2026-03-10 01:04:20,691 - INFO - ✓ Chat already active, 3 messages found
+2026-03-10 01:04:20,702 - INFO - → Age question already sent
+2026-03-10 01:04:20,707 - INFO - → Waiting for age response...
+2026-03-10 01:04:20,707 - DEBUG - Cleared observer history
+2026-03-10 01:04:20,757 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:21,278 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:23,288 - INFO - → Starting new chat...
+2026-03-10 01:04:23,322 - INFO - ✓ Chat already active, 4 messages found
+2026-03-10 01:04:23,332 - INFO - → Age question already sent
+2026-03-10 01:04:23,347 - INFO - → Waiting for age response...
+2026-03-10 01:04:23,347 - DEBUG - Cleared observer history
+2026-03-10 01:04:23,424 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:23,424 - INFO - ← Received: 1301:04
+2026-03-10 01:04:23,939 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:25,946 - INFO - → Starting new chat...
+2026-03-10 01:04:25,993 - INFO - ✓ Chat already active, 4 messages found
+2026-03-10 01:04:26,007 - INFO - → Age question already sent
+2026-03-10 01:04:26,022 - INFO - → Waiting for age response...
+2026-03-10 01:04:26,022 - DEBUG - Cleared observer history
+2026-03-10 01:04:26,118 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:26,118 - INFO - ← Received: 1301:04
+2026-03-10 01:04:26,642 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:28,657 - INFO - → Starting new chat...
+2026-03-10 01:04:28,690 - INFO - ✓ Chat already active, 4 messages found
+2026-03-10 01:04:28,699 - INFO - → Age question already sent
+2026-03-10 01:04:28,711 - INFO - → Waiting for age response...
+2026-03-10 01:04:28,711 - DEBUG - Cleared observer history
+2026-03-10 01:04:28,779 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:28,779 - INFO - ← Received: 1301:04
+2026-03-10 01:04:29,289 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:31,303 - INFO - → Starting new chat...
+2026-03-10 01:04:31,336 - INFO - ✓ Chat already active, 4 messages found
+2026-03-10 01:04:31,346 - INFO - → Age question already sent
+2026-03-10 01:04:31,357 - INFO - → Waiting for age response...
+2026-03-10 01:04:31,357 - DEBUG - Cleared observer history
+2026-03-10 01:04:31,434 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:31,434 - INFO - ← Received: 1301:04
+2026-03-10 01:04:31,955 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:33,960 - INFO - → Starting new chat...
+2026-03-10 01:04:33,996 - INFO - ✓ Chat already active, 4 messages found
+2026-03-10 01:04:34,004 - INFO - → Age question already sent
+2026-03-10 01:04:34,017 - INFO - → Waiting for age response...
+2026-03-10 01:04:34,018 - DEBUG - Cleared observer history
+2026-03-10 01:04:34,088 - INFO - ← Received: привет 01:04
+2026-03-10 01:04:34,088 - INFO - ← Received: 1301:04
+2026-03-10 01:04:34,609 - INFO - → Chat ended by interlocutor
+2026-03-10 01:04:36,096 - ERROR - Context cleanup error: BrowserContext.close: Connection closed while reading from the driver

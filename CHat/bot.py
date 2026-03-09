@@ -5,6 +5,7 @@ import time
 import threading
 import sys
 import logging
+import re
 from typing import Optional
 from datetime import datetime
 
@@ -19,6 +20,7 @@ from config import (
 )
 from observer import Observer
 from executor import Executor
+from brain import Brain
 
 
 # Setup logging
@@ -74,12 +76,15 @@ class AmorBot:
         self.page: Optional[Page] = None
         self.observer: Optional[Observer] = None
         self.executor: Optional[Executor] = None
+        self.brain: Optional[Brain] = None  # For future LLM integration
         
         self.state = "idle"  # idle, sent_hello, sent_age, manual
         self.conversation_active = False
         self.manual_control = False
         self.opener_sent = False
         self.age_sent = False  # Флаг: "Сколько лет" отправлено
+        self.waiting_for_age = False  # Флаг: ждём ответ про возраст
+        self.age_check_complete = False  # Флаг: проверка возраста завершена
         self.last_processed_message = ""
         self.chat_ended_reported = False
         self.received_response = False
@@ -139,11 +144,20 @@ class AmorBot:
         await self.connect_to_browser()
         self.observer = Observer(self.page)
         self.executor = Executor(self.page)
+        self.brain = Brain()  # Initialize brain for future use
         logger.info("✓ Bot initialized")
 
     async def start_new_chat(self) -> None:
         """Start a new chat session"""
+        logger.info("→ Starting new chat...")
+        
         if self.state in ["sent_hello", "sent_age", "manual"]:
+            logger.debug("Already in chat, skipping")
+            return
+
+        # Если возраст уже проверен в этом чате - не начинаем заново
+        if self.age_check_complete and self.manual_control:
+            logger.debug("Age already checked, continuing chat")
             return
 
         # Reset flags
@@ -152,6 +166,8 @@ class AmorBot:
         self.chat_ended_reported = False
         self.opener_sent = False
         self.age_sent = False
+        self.waiting_for_age = False
+        self.age_check_complete = False
         if self.observer:
             self.observer.clear_history()
 
@@ -172,6 +188,8 @@ class AmorBot:
                             outgoing_msgs = await self.page.query_selector_all(SELECTORS["outgoing_msg"])
                             total_msgs = len(incoming_msgs) + len(outgoing_msgs)
 
+                            logger.info(f"✓ Chat already active, {total_msgs} messages found")
+                            
                             self.conversation_active = True
                             self.state = "sent_hello"
                             self.last_message_time = time.time()
@@ -179,17 +197,63 @@ class AmorBot:
                             if total_msgs > 0:
                                 self.opener_sent = True
                                 # Check if age question was already asked
+                                age_found = False
+                                age_response_found = False
+                                
                                 for msg in outgoing_msgs:
                                     text = await msg.text_content()
                                     if text and any(p in text.lower() for p in ["скок лет", "сколько лет", "возраст", "лет"]):
                                         self.age_sent = True
                                         self.state = "sent_age"
+                                        age_found = True
+                                        logger.info("→ Age question already sent")
                                         break
+                                
+                                # Check if we already got age response
+                                if age_found:
+                                    # Check ONLY the last incoming message for age
+                                    if incoming_msgs:
+                                        last_msg = incoming_msgs[-1]  # Get last message only
+                                        text = await last_msg.text_content()
+                                        if text:
+                                            age = self.check_age(text)
+                                            if age is not None:
+                                                age_response_found = True
+                                                # Check age immediately
+                                                if age < 17 or age >= 20:
+                                                    logger.critical(f"⚠️ ОПАСНО: Возраст {age} вне диапазона 17-19")
+                                                    print("\n" + "!" * 50)
+                                                    print(f"⚠️ ОПАСНО: Собеседнику {age} лет (нужно 17-19)")
+                                                    print("!" * 50 + "\n")
+                                                    await self.end_chat_and_skip()
+                                                    return
+                                                else:
+                                                    logger.info(f"✓ Возраст {age} в норме (17-19)")
+                                                    print("\n" + "=" * 50)
+                                                    print(f"✓ Возраст {age} лет - НОРМА (17-19)")
+                                                    print("=" * 50 + "\n")
+                                                    self.waiting_for_age = False
+                                                    self.age_check_complete = True
+                                                    self.manual_control = True  # Give manual control after age OK
+                                                    logger.info("→ Age OK, manual control enabled")
+                                                    break
+                                    
+                                    if not age_response_found:
+                                        self.waiting_for_age = True
+                                        self.last_processed_message = ""  # Reset to process new messages
+                                        logger.info("→ Waiting for age response...")
+                                    # else: age already checked, manual_control set above
+                            
+                                    # Clear observer history to avoid processing old messages
+                                    if self.observer:
+                                        self.observer.clear_history()
+                                        logger.debug("Cleared observer history")
                             else:
                                 self.opener_sent = False
                                 await self.send_opener()
                             return
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Input field check error: {e}")
                 continue
 
         # Try to click "Start chat" button
@@ -206,14 +270,36 @@ class AmorBot:
                     if new_chat_btn:
                         is_visible = await new_chat_btn.is_visible()
                         if is_visible:
+                            logger.info(f"→ Found chat start button: {selector}")
+                            
+                            # Clear all memory BEFORE clicking start
+                            logger.info("→ Clearing all memory before new chat")
+                            self.last_processed_message = ""
+                            self.received_response = False
+                            self.chat_ended_reported = False
+                            self.opener_sent = False
+                            self.age_sent = False
+                            self.waiting_for_age = False
+                            self.age_check_complete = False
+                            self.manual_control = False
+                            self.state = "idle"
+                            if self.observer:
+                                self.observer.clear_history()
+                                logger.debug("Cleared observer history")
+                            if self.brain:
+                                self.brain.clear_context()
+                                logger.debug("Cleared brain context")
+                            
                             await asyncio.sleep(1)
                             await new_chat_btn.click()
                             self.opener_sent = False
                             await asyncio.sleep(2)
                             break
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Button {selector} error: {e}")
                     continue
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Start button search error: {e}")
             pass
 
         # Wait for chat to connect (up to 90 seconds)
@@ -277,20 +363,49 @@ class AmorBot:
                         logger.info("→ Detected age question sent manually")
                         break
 
-            # Check if chat ended
-            if self.opener_sent and self.received_response:
+            # Check if chat ended - but not while waiting for age response
+            if self.opener_sent and self.received_response and not self.waiting_for_age:
                 chat_ended = await self.observer.is_chat_ended()
                 if chat_ended and not self.chat_ended_reported:
                     self.chat_ended_reported = True
                     logger.info("→ Chat ended by interlocutor")
-                    # Reset and start new chat
+                    # Clear ALL memory
                     self.conversation_active = False
                     self.state = "idle"
                     self.opener_sent = False
                     self.age_sent = False
+                    self.waiting_for_age = False
+                    self.age_check_complete = False
                     self.received_response = False
+                    self.last_processed_message = ""
+                    self.chat_ended_reported = False
                     if self.observer:
                         self.observer.clear_history()
+                    if self.brain:
+                        self.brain.clear_context()
+                    logger.info("→ All memory cleared")
+                    continue
+            
+            # Also check if chat is still active
+            if self.conversation_active and self.observer:
+                is_active = await self.observer.is_chat_active()
+                if not is_active and self.received_response:
+                    # Chat is no longer active
+                    logger.info("→ Chat is no longer active")
+                    # Clear ALL memory
+                    self.conversation_active = False
+                    self.state = "idle"
+                    self.opener_sent = False
+                    self.age_sent = False
+                    self.waiting_for_age = False
+                    self.age_check_complete = False
+                    self.received_response = False
+                    self.last_processed_message = ""
+                    if self.observer:
+                        self.observer.clear_history()
+                    if self.brain:
+                        self.brain.clear_context()
+                    logger.info("→ All memory cleared")
                     continue
 
             # Get new messages
@@ -305,6 +420,28 @@ class AmorBot:
 
             await asyncio.sleep(SCAN_INTERVAL / 1000)
 
+    def check_age(self, message: str) -> Optional[int]:
+        """Extract age from message and check if it's in valid range (17-19)"""
+        # Remove timestamps completely - pattern: optional space + digits + colon + digits + optional space
+        message_clean = re.sub(r'\s*\d{1,2}:\d{2}\s*', ' ', message)
+        
+        # Find all standalone numbers (word boundaries)
+        numbers = re.findall(r'\b\d+\b', message_clean)
+        
+        if not numbers:
+            return None  # No age found
+        
+        # Take the first number as age
+        try:
+            age = int(numbers[0])
+            # Check if it's a reasonable age (10-99)
+            if 10 <= age <= 99:
+                return age
+        except ValueError:
+            pass
+        
+        return None
+
     async def process_incoming_message(self, message: str) -> None:
         """Process incoming message"""
         if message == self.last_processed_message:
@@ -313,27 +450,80 @@ class AmorBot:
 
         logger.info(f"← Received: {message}")
 
+        # Check age if we're waiting for it
+        if self.waiting_for_age:
+            age = self.check_age(message)
+            logger.debug(f"Age check result: {age}")
+            
+            if age is not None:
+                self.waiting_for_age = False  # Stop waiting
+                self.age_check_complete = True  # Mark check complete
+                
+                if age < 17 or age >= 20:
+                    # Age out of range - DANGER (only 17, 18, 19 are OK)
+                    logger.critical(f"⚠️ ОПАСНО: Возраст {age} вне диапазона 17-19")
+                    print("\n" + "!" * 50)
+                    print(f"⚠️ ОПАСНО: Собеседнику {age} лет (нужно 17-19)")
+                    print("!" * 50 + "\n")
+                    # End the chat immediately
+                    await self.end_chat_and_skip()
+                    return
+                else:
+                    # Age is OK (17, 18, or 19)
+                    logger.info(f"✓ Возраст {age} в норме (17-19)")
+                    print("\n" + "=" * 50)
+                    print(f"✓ Возраст {age} лет - НОРМА (17-19)")
+                    print("=" * 50 + "\n")
+                    # Continue chat - give manual control
+                    self.manual_control = True
+                    logger.info("→ Manual control enabled")
+            return
+
         # Sent "Привет", got response → send "Сколько лет" (only once!)
         if self.state == "sent_hello":
             if not self.age_sent:
                 self.age_sent = True  # Set flag BEFORE sending to prevent race
+                self.waiting_for_age = True  # Ждём ответ про возраст
                 logger.info("→ Sending: Сколько лет")
                 await self.executor.send_message("Сколько лет")
                 self.state = "sent_age"
             return
 
-        # Sent "Сколько лет", got response → give manual control
-        if self.state == "sent_age":
-            logger.info("→ Manual control enabled")
-            self.manual_control = True
-            print("\n" + "=" * 50)
-            print("🔴 БОТ НА ПАУЗЕ - управление у вас")
-            print("   /send <текст> - отправить сообщение")
-            print("   /start - вернуть управление боту")
-            print("   /exit - выйти")
-            print("   /skip - пропустить чат")
-            print("=" * 50 + "\n")
+    async def end_chat_and_skip(self) -> None:
+        """End current chat and skip to new one"""
+        # Prevent multiple calls
+        if self.state == "idle":
             return
+            
+        logger.info("→ Завершение чата (возраст не подошёл)")
+        
+        # Send goodbye message ONCE
+        if self.executor and self.conversation_active:
+            try:
+                await asyncio.sleep(0.5)  # Small delay before sending
+                await self.executor.send_message("пока")
+            except Exception as e:
+                logger.warning(f"Failed to send goodbye: {e}")
+        
+        # Clear ALL memory
+        self.conversation_active = False
+        self.state = "idle"
+        self.opener_sent = False
+        self.age_sent = False
+        self.waiting_for_age = False
+        self.age_check_complete = False
+        self.received_response = False
+        self.manual_control = False
+        self.last_processed_message = ""
+        self.chat_ended_reported = False
+        if self.observer:
+            self.observer.clear_history()
+        if self.brain:
+            self.brain.clear_context()
+        logger.info("→ All memory cleared")
+        
+        # Wait a bit and start new chat
+        await asyncio.sleep(2)
 
     async def handle_console_input(self) -> None:
         """Handle console commands"""
@@ -369,6 +559,7 @@ class AmorBot:
                 logger.info("👋 Завершение...")
                 if self.executor and self.conversation_active:
                     await self.executor.send_message("пока")
+                self.waiting_for_age = False
                 await self.cleanup()
                 break
 
@@ -383,14 +574,23 @@ class AmorBot:
 
             elif command_lower == "/skip":
                 logger.info("→ Пропуск чата...")
+                
+                # Clear all memory
                 self.conversation_active = False
                 self.state = "idle"
                 self.opener_sent = False
                 self.age_sent = False
+                self.waiting_for_age = False
+                self.age_check_complete = False
                 self.received_response = False
                 self.manual_control = False
+                self.last_processed_message = ""
+                self.chat_ended_reported = False
                 if self.observer:
                     self.observer.clear_history()
+                if self.brain:
+                    self.brain.clear_context()
+                logger.info("→ All memory cleared")
 
             elif command_lower.startswith("/"):
                 logger.warning(f"Неизвестная команда: {command}")

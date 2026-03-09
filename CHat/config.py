@@ -33,6 +33,7 @@ SELECTORS = {
     "send_button": ".send_btn_circle, .sendMessageBtn, #sendMessageBtn, button.send",
     "new_chat_button": ".talk_over_button, #searchCompanyBtn, .search-btn, button:has-text('Начать чат'), button:has-text('Начать')",
     "chat_ended_indicator": ".status-end.talk_over, .chat-ended, .dialog-closed",
+    "close_chat_button": ".close_dialog_btn, .btn-close_dialog, button:has-text('Завершить чат')",
 }
 
 # Openers (best performing first messages)

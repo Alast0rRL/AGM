@@ -137,6 +137,22 @@ class Observer:
         text_lower = text.lower()
         return any(pattern in text_lower for pattern in system_patterns)
 
+    async def is_chat_active(self) -> bool:
+        """Check if chat is currently active (close button is visible)"""
+        try:
+            # Check for close chat button - it's visible when chat is active
+            close_btn = await self.page.query_selector(
+                SELECTORS.get("close_chat_button", ".close_dialog_btn")
+            )
+            if close_btn:
+                is_visible = await close_btn.is_visible()
+                if is_visible:
+                    return True
+            
+            return False
+        except Exception:
+            return False
+
     async def is_chat_ended(self) -> bool:
         """Detect if interlocutor has ended the chat"""
         try:
@@ -146,7 +162,7 @@ class Observer:
             )
             if ended_indicator:
                 return True
-            
+
             # Check for new chat button visibility (appears after disconnect)
             new_chat_btn = await self.page.query_selector(
                 SELECTORS["new_chat_button"]
@@ -155,7 +171,16 @@ class Observer:
                 is_visible = await new_chat_btn.is_visible()
                 if is_visible:
                     return True
-            
+
+            # If close button is NOT visible, chat might be ended
+            close_btn = await self.page.query_selector(
+                SELECTORS.get("close_chat_button", ".close_dialog_btn")
+            )
+            if close_btn:
+                is_visible = await close_btn.is_visible()
+                if not is_visible:
+                    return True
+
             return False
         except Exception:
             return False

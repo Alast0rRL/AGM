@@ -1,0 +1,29 @@
+2026-03-10 00:55:42,760 - WARNING - ✗ Failed to connect: BrowserType.connect_over_cdp: connect ECONNREFUSED 127.0.0.1:9222
+Call log:
+  - <ws preparing> retrieving websocket url from http://127.0.0.1:9222
+
+2026-03-10 00:55:42,760 - WARNING - Trying to launch Chrome...
+2026-03-10 00:55:43,107 - INFO - ✓ Launched Chrome on port 9222
+2026-03-10 00:55:46,227 - INFO - ✓ Navigated to nekto.me/chat/
+2026-03-10 00:55:46,235 - INFO - ✓ Bot initialized
+2026-03-10 00:55:46,236 - INFO - Amor-Bot запущен
+2026-03-10 00:55:46,236 - INFO - → Starting new chat...
+2026-03-10 00:55:46,240 - INFO - === КОМАНДЫ ===
+2026-03-10 00:55:46,240 - INFO - /stop - Пауза, /start - Продолжить, /send <текст> - Отправить
+2026-03-10 00:55:46,240 - INFO - /exit - Выйти, /skip - Пропустить чат
+2026-03-10 00:55:46,273 - INFO - → Found chat start button: #searchCompanyBtn
+2026-03-10 00:55:47,301 - DEBUG - Button #searchCompanyBtn error: ElementHandle.click: Element is not attached to the DOM
+Call log:
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+
+2026-03-10 00:55:58,504 - INFO - → Sending: Привет
+2026-03-10 00:56:02,305 - INFO - ← Received: Привет 00:56
+2026-03-10 00:56:02,305 - INFO - → Sending: Сколько лет
+2026-03-10 00:56:03,605 - INFO - → Chat ended by interlocutor
+2026-03-10 00:56:05,609 - INFO - → Starting new chat...
+2026-03-10 00:56:05,643 - INFO - ✓ Chat already active, 3 messages found
+2026-03-10 00:56:05,653 - INFO - → Age question already sent, waiting for response
+2026-03-10 00:56:05,700 - INFO - ← Received: Привет 00:56
+2026-03-10 00:56:05,700 - INFO - → Manual control enabled
+2026-03-10 00:57:35,725 - ERROR - Context cleanup error: BrowserContext.close: Connection closed while reading from the driver

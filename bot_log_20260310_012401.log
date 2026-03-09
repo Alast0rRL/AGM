@@ -1,0 +1,36 @@
+2026-03-10 01:24:01,664 - WARNING - ✗ Failed to connect: BrowserType.connect_over_cdp: connect ECONNREFUSED 127.0.0.1:9222
+Call log:
+  - <ws preparing> retrieving websocket url from http://127.0.0.1:9222
+
+2026-03-10 01:24:01,665 - WARNING - Trying to launch Chrome...
+2026-03-10 01:24:02,070 - INFO - ✓ Launched Chrome on port 9222
+2026-03-10 01:24:04,609 - INFO - ✓ Navigated to nekto.me/chat/
+2026-03-10 01:24:04,617 - INFO - ✓ Bot initialized
+2026-03-10 01:24:04,618 - INFO - Amor-Bot запущен
+2026-03-10 01:24:04,618 - INFO - → Starting new chat...
+2026-03-10 01:24:04,621 - INFO - === КОМАНДЫ ===
+2026-03-10 01:24:04,621 - INFO - /stop - Пауза, /start - Продолжить, /send <текст> - Отправить
+2026-03-10 01:24:04,622 - INFO - /exit - Выйти, /skip - Пропустить чат
+2026-03-10 01:24:04,658 - INFO - → Found chat start button: #searchCompanyBtn
+2026-03-10 01:24:04,658 - INFO - → Clearing all memory before new chat
+2026-03-10 01:24:04,659 - DEBUG - Cleared observer history
+2026-03-10 01:24:04,659 - DEBUG - Cleared brain context
+2026-03-10 01:24:16,930 - INFO - → Sending: Привет
+2026-03-10 01:24:20,228 - INFO - ← Received: Привіт 01:24
+2026-03-10 01:24:20,228 - INFO - → Sending: Сколько лет
+2026-03-10 01:24:22,008 - INFO - ← Received: @Z1nkV0l0dkk01:24
+2026-03-10 01:24:22,008 - DEBUG - Age check result: None
+2026-03-10 01:24:23,649 - INFO - ← Received: Ой01:24
+2026-03-10 01:24:23,649 - DEBUG - Age check result: None
+2026-03-10 01:24:25,835 - INFO - ← Received: Вибач 01:24
+2026-03-10 01:24:25,835 - DEBUG - Age check result: None
+2026-03-10 01:24:31,324 - INFO - → Chat is no longer active
+2026-03-10 01:24:31,324 - INFO - → All memory cleared
+2026-03-10 01:24:33,327 - INFO - → Starting new chat...
+2026-03-10 01:24:33,330 - DEBUG - Input field check error: Page.query_selector: Target page, context or browser has been closed
+2026-03-10 01:24:33,334 - DEBUG - Input field check error: Page.query_selector: Target page, context or browser has been closed
+2026-03-10 01:24:33,337 - DEBUG - Input field check error: Page.query_selector: Target page, context or browser has been closed
+2026-03-10 01:24:33,339 - DEBUG - Button #searchCompanyBtn error: Page.query_selector: Target page, context or browser has been closed
+2026-03-10 01:24:33,342 - DEBUG - Button button:has-text('Начать чат') error: Page.query_selector: Target page, context or browser has been closed
+2026-03-10 01:24:33,345 - DEBUG - Button button:has-text('Начать') error: Page.query_selector: Target page, context or browser has been closed
+2026-03-10 01:24:33,519 - INFO - ✓ Context closed

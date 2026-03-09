@@ -1,0 +1,26 @@
+2026-03-10 00:52:53,921 - WARNING - ✗ Failed to connect: BrowserType.connect_over_cdp: connect ECONNREFUSED 127.0.0.1:9222
+Call log:
+  - <ws preparing> retrieving websocket url from http://127.0.0.1:9222
+
+2026-03-10 00:52:53,921 - WARNING - Trying to launch Chrome...
+2026-03-10 00:52:54,256 - INFO - ✓ Launched Chrome on port 9222
+2026-03-10 00:52:56,985 - INFO - ✓ Navigated to nekto.me/chat/
+2026-03-10 00:52:56,993 - INFO - ✓ Bot initialized
+2026-03-10 00:52:56,993 - INFO - Amor-Bot запущен
+2026-03-10 00:52:56,993 - INFO - → Starting new chat...
+2026-03-10 00:52:57,005 - INFO - === КОМАНДЫ ===
+2026-03-10 00:52:57,005 - INFO - /stop - Пауза, /start - Продолжить, /send <текст> - Отправить
+2026-03-10 00:52:57,005 - INFO - /exit - Выйти, /skip - Пропустить чат
+2026-03-10 00:52:57,039 - INFO - → Found chat start button: #searchCompanyBtn
+2026-03-10 00:53:04,178 - INFO - → Sending: Привет
+2026-03-10 00:53:06,976 - INFO - ← Received: Привет 00:53
+2026-03-10 00:53:06,977 - INFO - → Sending: Сколько лет
+2026-03-10 00:53:08,080 - INFO - → Chat ended by interlocutor
+2026-03-10 00:53:10,092 - INFO - → Starting new chat...
+2026-03-10 00:53:10,124 - INFO - ✓ Chat already active, 4 messages found
+2026-03-10 00:53:10,132 - INFO - → Age question already sent
+2026-03-10 00:53:10,192 - INFO - ← Received: Привет 00:53
+2026-03-10 00:53:10,192 - INFO - → Manual control enabled
+2026-03-10 00:53:10,193 - INFO - ← Received: 1300:53
+2026-03-10 00:53:10,193 - INFO - → Manual control enabled
+2026-03-10 00:55:41,329 - ERROR - Context cleanup error: BrowserContext.close: Connection closed while reading from the driver
