@@ -1,6 +1,7 @@
 import asyncio
 import re
 import random
+import winsound
 from playwright.async_api import async_playwright
 from config import USER_DATA_DIR, REMOTE_DEBUGGING_PORT
 
@@ -159,7 +160,26 @@ async def main():
                 is_target = any(a in target_ages for a in ages)
 
                 if is_target:
-                    print(f"ПОДХОДИТ ({ages})! Останавливаю бота для ручного общения.")
+                    print(f"ПОДХОДИТ ({ages})! Отправляю 'неужели' и останавливаю бота.")
+                    # Воспроизводим звуковой сигнал (громкий и длинный)
+                    winsound.Beep(1000, 1000)  # Частота 1000 Гц, длительность 1000 мс
+                    await asyncio.sleep(0.2)
+                    winsound.Beep(1000, 1000)  # Второй сигнал
+                    await human_type(page, "неужели")
+                    await asyncio.sleep(0.5)
+                    await human_type(page, "Небольшой тест")
+                    await asyncio.sleep(0.5)
+                    await human_type(page, "Любимый мультик детства??")
+                    
+                    # Ждём немного и проверяем, не завершен ли чат
+                    await asyncio.sleep(2)
+                    new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
+                    if new_chat_btn:
+                        is_visible = await new_chat_btn.is_visible()
+                        if is_visible:
+                            print("Чат завершен собеседником. Начинаю новый...")
+                            continue
+                    
                     input("Нажми Enter в консоли, чтобы снова запустить бота...")
                 else:
                     # Возраст не назван или не подходит - переспрашиваем или уточняем
@@ -173,6 +193,7 @@ async def main():
                     else:
                         # Возраст не назван - переспрашиваем сразу
                         print("Переспрашиваем возраст...")
+                        await asyncio.sleep(3)  # Задержка перед повторным вопросом
                         await human_type(page, "ну скажи сколько лет?")
                         count += 1
 
