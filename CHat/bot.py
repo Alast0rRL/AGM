@@ -2,6 +2,7 @@ import asyncio
 import re
 import random
 import winsound
+from datetime import datetime
 from playwright.async_api import async_playwright
 from config import USER_DATA_DIR, REMOTE_DEBUGGING_PORT
 
@@ -25,7 +26,7 @@ async def human_type(page, text):
     await page.keyboard.press("Enter")
     print(f"Отправлено: {text}")
 
-async def wait_for_partner_msg(page, last_count):
+async def wait_for_partner_msg(page, last_count, all_messages: list = None):
     """Ждет нового сообщения от собеседника"""
     while True:
         # Проверяем кнопку "Начать новый чат" - только если она видимая
@@ -45,6 +46,11 @@ async def wait_for_partner_msg(page, last_count):
             # Берем текст последнего сообщения
             text = await current_msgs[-1].inner_text()
             print(f"Собеседник: {text}")
+            
+            # Сохраняем сообщение в список (если передан)
+            if all_messages is not None:
+                all_messages.append({"role": "other", "content": text})
+            
             return text, len(current_msgs)
         await asyncio.sleep(0.2)  # Уменьшили интервал опроса с 0.5 до 0.2 секунды
 
@@ -107,6 +113,23 @@ async def end_chat(page):
     # Если не нашли кнопку завершения - чат уже может быть завершен
     print("Не удалось найти кнопку завершения (возможно чат уже завершен)")
 
+async def save_chat_log(messages: list, age: str):
+    """Сохраняет лог чата в файл"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"CHat/chat_logs/chat_{timestamp}_age{age}.txt"
+    
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(f"=== Чат от {timestamp} ===\n")
+        f.write(f"Возраст собеседника: {age}\n")
+        f.write(f"Всего сообщений: {len(messages)}\n\n")
+        
+        for msg in messages:
+            role = "Я" if msg["role"] == "own" else "Собеседник"
+            f.write(f"[{role}] {msg['content']}\n")
+    
+    print(f"Лог чата сохранён: {filename}")
+    return filename
+
 async def main():
     async with async_playwright() as p:
         # Запускаем Chrome с использованием постоянного профиля
@@ -124,14 +147,18 @@ async def main():
             try:
                 # Запускаем новый чат
                 count = await start_new_chat(page)
+                
+                # Список для сбора всех сообщений чата
+                chat_messages = []
 
                 # 4. Пишем "привет" - сразу без задержки
                 await human_type(page, "привет")
+                chat_messages.append({"role": "own", "content": "привет"})
                 count += 1 # Наше сообщение
 
                 # 5. Ждем ответ
                 print("Ждем ответ на 'привет'...")
-                resp, count = await wait_for_partner_msg(page, count)
+                resp, count = await wait_for_partner_msg(page, count, chat_messages)
 
                 # Если чат завершен во время ожидания
                 if resp is None:
@@ -140,11 +167,12 @@ async def main():
 
                 # 6. Пишем "сколько лет" - сразу без задержки
                 await human_type(page, "сколько лет")
+                chat_messages.append({"role": "own", "content": "сколько лет"})
                 count += 1
 
                 # 7. Ждем ответ про возраст
                 print("Ждем возраст...")
-                age_text, count = await wait_for_partner_msg(page, count)
+                age_text, count = await wait_for_partner_msg(page, count, chat_messages)
 
                 # Если чат завершен во время ожидания
                 if age_text is None:
@@ -166,10 +194,13 @@ async def main():
                     await asyncio.sleep(0.2)
                     winsound.Beep(1000, 1000)  # Второй сигнал
                     await human_type(page, "неужели")
+                    chat_messages.append({"role": "own", "content": "неужели"})
                     await asyncio.sleep(0.5)
-                    await human_type(page, "Небольшой тест")
+                    await human_type(page, "небольшой тест")
+                    chat_messages.append({"role": "own", "content": "небольшой тест"})
                     await asyncio.sleep(0.5)
-                    await human_type(page, "Любимый мультик детства??")
+                    await human_type(page, "любимый мультик детства??")
+                    chat_messages.append({"role": "own", "content": "любимый мультик детства??"})
                     
                     # Ждём немного и проверяем, не завершен ли чат
                     await asyncio.sleep(2)
@@ -179,6 +210,10 @@ async def main():
                         if is_visible:
                             print("Чат завершен собеседником. Начинаю новый...")
                             continue
+                    
+                    # Сохраняем лог если сообщений больше 10
+                    if len(chat_messages) > 10:
+                        await save_chat_log(chat_messages, str(ages[0]))
                     
                     input("Нажми Enter в консоли, чтобы снова запустить бота...")
                 else:
@@ -195,23 +230,50 @@ async def main():
                         print("Переспрашиваем возраст...")
                         await asyncio.sleep(3)  # Задержка перед повторным вопросом
                         await human_type(page, "ну скажи сколько лет?")
+                        chat_messages.append({"role": "own", "content": "ну скажи сколько лет?"})
                         count += 1
 
                         # Ждем ответ ещё раз
                         print("Ждем возраст (повторно)...")
-                        age_text2, count = await wait_for_partner_msg(page, count)
+                        age_text2, count = await wait_for_partner_msg(page, count, chat_messages)
 
                         if age_text2 is None:
                             print("Чат завершен собеседником. Начинаю новый...")
                             continue
 
-                        
+
                         print(f"Собеседник ответил: {age_text2}")
                         ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
                         is_target2 = any(a in target_ages for a in ages2)
-                        
+
                         if is_target2:
-                            print(f"ПОДХОДИТ ({ages2})! Останавливаю бота для ручного общения.")
+                            print(f"ПОДХОДИТ ({ages2})! Отправляю 'неужели' и останавливаю бота.")
+                            # Воспроизводим звуковой сигнал
+                            winsound.Beep(1000, 1000)
+                            await asyncio.sleep(0.2)
+                            winsound.Beep(1000, 1000)
+                            await human_type(page, "неужели")
+                            chat_messages.append({"role": "own", "content": "неужели"})
+                            await asyncio.sleep(0.5)
+                            await human_type(page, "небольшой тест")
+                            chat_messages.append({"role": "own", "content": "небольшой тест"})
+                            await asyncio.sleep(0.5)
+                            await human_type(page, "любимый мультик детства??")
+                            chat_messages.append({"role": "own", "content": "любимый мультик детства??"})
+                            
+                            # Ждём и проверяем, не завершен ли чат
+                            await asyncio.sleep(2)
+                            new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
+                            if new_chat_btn:
+                                is_visible = await new_chat_btn.is_visible()
+                                if is_visible:
+                                    print("Чат завершен собеседником. Начинаю новый...")
+                                    continue
+                            
+                            # Сохраняем лог если сообщений больше 10
+                            if len(chat_messages) > 10:
+                                await save_chat_log(chat_messages, str(ages2[0]))
+                            
                             input("Нажми Enter в консоли, чтобы снова запустить бота...")
                         else:
                             print(f"Возраст всё ещё не подходит: '{age_text2}'. Завершаю чат.")
