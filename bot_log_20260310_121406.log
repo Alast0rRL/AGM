@@ -1,0 +1,12 @@
+2026-03-10 12:14:07,060 - INFO - ✓ Connected to Chrome on port 9222
+2026-03-10 12:14:09,288 - INFO - ✓ Navigated to nekto.me/chat/
+2026-03-10 12:14:09,297 - INFO - ✓ Bot initialized
+2026-03-10 12:14:09,298 - INFO - Amor-Bot запущен
+2026-03-10 12:14:09,298 - INFO - → Starting new chat...
+2026-03-10 12:14:09,300 - INFO - === КОМАНДЫ ===
+2026-03-10 12:14:09,300 - INFO - /stop - Пауза, /start - Продолжить, /send <текст> - Отправить
+2026-03-10 12:14:09,300 - INFO - /exit - Выйти, /skip - Пропустить чат
+2026-03-10 12:14:09,327 - INFO - → Found chat start button: #searchCompanyBtn
+2026-03-10 12:14:09,328 - INFO - → Clearing all memory before new chat
+2026-03-10 12:14:09,328 - DEBUG - Cleared observer history
+2026-03-10 12:14:09,328 - DEBUG - Cleared brain context

@@ -3,7 +3,7 @@ REM Script to start Chrome with remote debugging enabled
 
 set CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 set DEBUG_PORT=9222
-set USER_DATA_DIR="C:\Users\%USERNAME%\AppData\Local\Google\Chrome\User Data"
+set USER_DATA_DIR="C:\Users\%USERNAME%\ChromeData\AGM"
 
 REM Close any running Chrome instances
 taskkill /F /IM chrome.exe 2>nul

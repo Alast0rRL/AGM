@@ -1,6 +1,7 @@
 """Observer Module - Page monitoring and message detection"""
 
 import asyncio
+import hashlib
 from typing import List, Dict, Optional
 from playwright.async_api import Page
 
@@ -31,7 +32,7 @@ class Observer:
     def __init__(self, page: Page):
         self.page = page
         self.seen_messages: set = set()
-        self.last_message_id: int = 0
+        self.last_message_id: str = ""
 
     async def _get_message_elements(self, selector: str) -> List:
         """Get all message elements matching selector"""
@@ -44,15 +45,31 @@ class Observer:
     async def _extract_message_text(self, element) -> Optional[str]:
         """Extract text content from message element"""
         try:
-            text = await element.text_content()
-            return text.strip() if text else None
-        except Exception:
+            # First try to get text from the message bubble specifically
+            bubble = await element.query_selector(".window_chat_dialog_text, .talk-bubble, .message-text, .text")
+            if bubble:
+                # Use inner_text for better formatting
+                text = await bubble.inner_text()
+                if text:
+                    print(f"  [Observer] Текст из bubble: '{text.strip()}'")
+                    return text.strip()
+            
+            # Fallback to full element text
+            text = await element.inner_text()
+            result = text.strip() if text else None
+            print(f"  [Observer] Текст из элемента (fallback): '{result}'")
+            return result
+        except Exception as e:
+            print(f"  [Observer] Ошибка извлечения текста: {e}")
             return None
 
-    async def _get_message_id(self, element) -> int:
-        """Generate unique ID for message based on content"""
+    async def _get_message_id(self, element) -> str:
+        """Generate unique ID for message based on content using stable hash"""
         text = await self._extract_message_text(element)
-        return hash(text) if text else 0
+        if not text:
+            return ""
+        # Use MD5 for stable hashing across Python sessions
+        return hashlib.md5(text.encode('utf-8')).hexdigest()
 
     async def get_new_messages(self) -> List[Dict]:
         """
@@ -68,26 +85,33 @@ class Observer:
             all_messages = await self.page.query_selector_all(
                 f"{SELECTORS['incoming_msg']}, {SELECTORS['outgoing_msg']}"
             )
+            print(f"  [Observer] Найдено элементов сообщений: {len(all_messages)}")
+            print(f"  [Observer] Селекторы: incoming={SELECTORS['incoming_msg']}, outgoing={SELECTORS['outgoing_msg']}")
         except Exception as e:
             print(f"  [Observer] Ошибка поиска сообщений: {e}")
             return new_messages
 
         for msg_element in all_messages:
+            # Get classes for debugging
+            classes = await msg_element.get_attribute("class")
             msg_id = await self._get_message_id(msg_element)
+            content = await self._extract_message_text(msg_element)
+
+            print(f"  [Observer] Сообщение: class='{classes}', id={msg_id}, content='{content}'")
 
             # Skip already seen messages
             if msg_id in self.seen_messages:
+                print(f"  [Observer] Пропущено (уже видено): {msg_id}")
                 continue
 
             # Determine message role
             is_outgoing = await self._is_outgoing_message(msg_element)
             role = "own" if is_outgoing else "other"
-
-            # Extract content
-            content = await self._extract_message_text(msg_element)
+            print(f"  [Observer] Роль: {role} (is_outgoing={is_outgoing})")
 
             # Skip system messages and empty content
             if not content or self._is_system_message(content):
+                print(f"  [Observer] Пропущено (системное или пустое)")
                 self.seen_messages.add(msg_id)
                 continue
 
@@ -101,6 +125,7 @@ class Observer:
             new_messages.append(msg_data)
             self.seen_messages.add(msg_id)
             self.last_message_id = msg_id
+            print(f"  [Observer] НОВОЕ сообщение добавлено: {role} - {content}")
 
         if new_messages:
             print(f"  [Observer] Найдено новых сообщений: {len(new_messages)}")
