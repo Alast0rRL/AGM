@@ -3,9 +3,55 @@ import re
 import random
 import time
 import winsound
+import threading
+import queue
+import pyttsx3
 from datetime import datetime
 from playwright.async_api import async_playwright
 from config import USER_DATA_DIR, REMOTE_DEBUGGING_PORT
+
+# --- TTS (озвучка сообщений) ---
+_tts_queue = queue.Queue()
+MALE_VOICE = None
+FEMALE_VOICE = None
+
+def _init_tts():
+    global MALE_VOICE, FEMALE_VOICE
+    try:
+        engine = pyttsx3.init()
+        voices = engine.getProperty('voices')
+        for v in voices:
+            name = v.name.lower()
+            if FEMALE_VOICE is None and any(x in name for x in ['female', 'zira', 'helena', 'eva', 'anna', 'milena', 'irina']):
+                FEMALE_VOICE = v.id
+            if MALE_VOICE is None and any(x in name for x in ['male', 'david', 'dmitry', 'pavel', 'mikhail', 'boris', 'maxim']):
+                MALE_VOICE = v.id
+        engine.stop()
+    except Exception as e:
+        print(f"TTS init error: {e}")
+
+def _tts_worker():
+    while True:
+        text, voice_id = _tts_queue.get()
+        try:
+            engine = pyttsx3.init()
+            if voice_id:
+                engine.setProperty('voice', voice_id)
+            engine.setProperty('rate', 170)
+            engine.say(text)
+            engine.runAndWait()
+            engine.stop()
+        except Exception:
+            pass
+        _tts_queue.task_done()
+
+_init_tts()
+_tts_thread = threading.Thread(target=_tts_worker, daemon=True)
+_tts_thread.start()
+
+async def speak(text, female=True):
+    voice_id = FEMALE_VOICE if female else MALE_VOICE
+    _tts_queue.put((text, voice_id))
 
 # Селекторы (настроены под текущую верстку Nekto.me)
 START_BUTTON = "#searchCompanyBtn"
@@ -26,6 +72,7 @@ async def human_type(page, text):
     await page.type(INPUT_FIELD, text, delay=random.randint(10, 30))
     await page.keyboard.press("Enter")
     print(f"Отправлено: {text}")
+    await speak(text, female=False)
 
 async def get_msg_role(page, msg_element):
     """Определяет, отправлено ли сообщение ботом (self) или собеседником"""
@@ -60,6 +107,7 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
                 if role != 'self':
                     text = await current_msgs[i].inner_text()
                     print(f"Собеседник: {text}")
+                    await speak(text, female=True)
                     if all_messages is not None:
                         all_messages.append({"role": "other", "content": text})
                     response_time = time.time() - start_time
@@ -298,6 +346,7 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                 chat_messages.append({"role": ro, "content": t})
                 print(f"[{'Я' if ro == 'own' else 'Собеседник'}] {t}")
                 if ro == "other":
+                    await speak(t, female=True)
                     last_partner_msg_time = time.time()
                     if is_ukrainian(t):
                         print(f"Украинский язык обнаружен: '{t}'. Завершаю чат.")
@@ -382,6 +431,7 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                 chat_messages.append({"role": ro, "content": t})
                 print(f"[{'Я' if ro == 'own' else 'Собеседник'}] {t}")
                 if ro == "other":
+                    await speak(t, female=True)
                     last_partner_msg_time = time.time()
                     if is_ukrainian(t):
                         print(f"Украинский язык обнаружен: '{t}'. Завершаю чат.")
@@ -585,6 +635,7 @@ async def wait_and_reply_age(page, count, chat_messages, partner_msg):
                     t = await msgs[i].inner_text()
                     chat_messages.append({"role": "other", "content": t})
                     print(f"Собеседник: {t}")
+                    await speak(t, female=True)
                     if is_age_question(t):
                         asked = True
                 count = len(msgs)
