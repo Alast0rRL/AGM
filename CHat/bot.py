@@ -1,6 +1,7 @@
 import asyncio
 import re
 import random
+import time
 import winsound
 from datetime import datetime
 from playwright.async_api import async_playwright
@@ -72,8 +73,18 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
         await asyncio.sleep(0.2)
 
 async def start_new_chat(page):
-    """Начинает новый чат"""
+    """Начинает новый чат или продолжает активный"""
     print("\n--- Запуск нового цикла ---")
+    
+    # Проверяем, есть ли уже активный чат (поле ввода видимо)
+    try:
+        existing_input = await page.query_selector(INPUT_FIELD)
+        if existing_input and await existing_input.is_visible():
+            print("Активный чат уже найден, продолжаем...")
+            msgs = await page.query_selector_all(MESSAGES)
+            return len(msgs)
+    except:
+        pass
     
     # Пробуем нажать "Начать чат" если чат завершен
     try:
@@ -84,10 +95,30 @@ async def start_new_chat(page):
             await asyncio.sleep(1)
     except:
         # Если кнопки нет, идем на главную и ищем основную кнопку
-        await page.goto("https://nekto.me/chat/#/")
-        await page.wait_for_selector(START_BUTTON)
-        await page.click(START_BUTTON)
-        print("Нажата кнопка поиска собеседника")
+        try:
+            await page.goto("https://nekto.me/chat/#/", timeout=15000)
+        except:
+            pass
+        await asyncio.sleep(2)
+        try:
+            await page.wait_for_selector(START_BUTTON, timeout=10000)
+            await page.click(START_BUTTON)
+            print("Нажата кнопка поиска собеседника")
+        except:
+            # Перезагружаем страницу и пробуем снова
+            print("Кнопка поиска не найдена, перезагружаю страницу...")
+            try:
+                await page.reload(timeout=15000)
+            except:
+                pass
+            await asyncio.sleep(3)
+            try:
+                await page.wait_for_selector(START_BUTTON, timeout=20000)
+                await page.click(START_BUTTON)
+                print("Нажата кнопка поиска собеседника (после перезагрузки)")
+            except:
+                print("Кнопка поиска не найдена даже после перезагрузки")
+                raise
     
     # Принять правила (если выскочат)
     try:
@@ -97,38 +128,50 @@ async def start_new_chat(page):
         pass
     
     # Ждем появления поля ввода (собеседник найден)
-    # Таймаут 5 минут - достаточно для поиска собеседника
     print("Ищем собеседника...")
     try:
         await page.wait_for_selector(INPUT_FIELD, timeout=300000)
         print("Собеседник найден!")
     except Exception as e:
         print(f"Ошибка поиска собеседника: {e}")
-        raise  # Пробрасываем ошибку дальше
+        raise
     
-    # Возвращаем количество текущих сообщений
     msgs = await page.query_selector_all(MESSAGES)
     return len(msgs)
 
 async def end_chat(page):
     """Завершает текущий чат"""
-    try:
-        # Пробуем найти кнопку "Завершить чат" в шапке
-        stop = await page.wait_for_selector("button:has-text('Завершить чат')", timeout=2000)
-        if stop:
-            await stop.click()
-            await asyncio.sleep(0.5)
-            # Подтверждение
-            confirm = await page.wait_for_selector("button.swal2-confirm", timeout=2000)
-            if confirm:
+    # 1. Ищем кнопку "Завершить" по всем известным селекторам
+    stop = None
+    for selector in STOP_BUTTON.split(", "):
+        try:
+            stop = await page.wait_for_selector(selector, timeout=2000)
+            if stop:
+                await stop.click()
+                print(f"Нажата кнопка завершения ({selector})")
+                break
+        except:
+            continue
+
+    if not stop:
+        print("Не удалось найти кнопку завершения")
+        return
+
+    # 2. Ждём и нажимаем подтверждение в диалоговом окне
+    await asyncio.sleep(1)
+    CONFIRM_SELECTORS = [CONFIRM_STOP, ".swal2-confirm.swal2-styled", "button:has-text('OK')", "button:has-text('Да')", ".swal2-actions button"]
+    for selector in CONFIRM_SELECTORS:
+        try:
+            confirm = await page.wait_for_selector(selector, timeout=3000)
+            if confirm and await confirm.is_visible():
                 await confirm.click()
-                print("Чат завершен")
+                print("Чат завершен (подтверждено)")
+                await asyncio.sleep(1)
                 return
-    except:
-        pass
-    
-    # Если не нашли кнопку завершения - чат уже может быть завершен
-    print("Не удалось найти кнопку завершения (возможно чат уже завершен)")
+        except:
+            continue
+
+    print("Не удалось найти кнопку подтверждения")
 
 async def save_chat_log(messages: list, age: str):
     """Сохраняет лог чата в файл"""
@@ -164,7 +207,7 @@ AGE_ASK_PATTERNS = [
     "скока", "скоко", "сколька", "сколко",
     "скока тебе", "скока лет",
     # Короткие формы
-    "а тебе", "тебе",
+    "а тебе", "тебе", "а те",
     "а у тебя", "у тебя",
     # Славянские формы
     "самой", "самому",
@@ -177,14 +220,15 @@ AGE_ASK_PATTERNS = [
 
 NAME_ASK_PATTERNS = [
     "как тебя зовут", "как зовут", "как звать",
-    "твое имя", "твоё имя",
+    "а зовут как", "зовут как",
+    "твое имя", "твоё имя", "имя как",
     "а тебя", "представься",
     "как тебя", "а как тебя",
     "имя", "как называть",
 ]
 
 FROM_ASK_PATTERNS = [
-    "откуда",
+    "откуда", "где живешь", "где ты живешь",
 ]
 
 NICE_TO_MEET_PATTERNS = [
@@ -194,6 +238,33 @@ NICE_TO_MEET_PATTERNS = [
     "приятно", "знакомы",
 ]
 
+AND_YOU_PATTERNS = [
+    "а ты", "а а ты", "а ты как", "а ты откуда",
+    "а у тебя", "а у а ты",
+    "а ты?", "а ты а",
+]
+
+WHAT_ARE_YOU_DOING_PATTERNS = [
+    "что делаешь", "чем занят", "чем занимаешься",
+    "что сейчас делаешь", "чем шумишь",
+]
+
+CONFIRMATION_PATTERNS = ["да", "верно", "точно", "правда", "ага"]
+
+def is_confirmation_question(text: str) -> bool:
+    t = text.lower().strip()
+    if not any(p in t for p in ["а ты"]):
+        return False
+    # Check if ends with a confirmation word (e.g. "а ты русский да")
+    words = t.split()
+    if words and words[-1] in CONFIRMATION_PATTERNS:
+        return True
+    # Check for "да" in the middle/end part of the message (e.g. "а ты русский да?")
+    after_atyu = t.split("а ты", 1)
+    if len(after_atyu) > 1 and any(p in after_atyu[1] for p in CONFIRMATION_PATTERNS):
+        return True
+    return False
+
 async def enter_wait_mode(page, count, chat_messages, label_age):
     """После обмена возрастом: ждёт имя, 'откуда', вопрос про возраст, отвечает, логирует до конца чата"""
     lc = count
@@ -201,9 +272,14 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
     from_asked = False
     nice_to_meet = False
     age_asked = False
+    last_partner_msg_time = time.time()
 
     for _ in range(60):
         await asyncio.sleep(1)
+        if time.time() - last_partner_msg_time > 30:
+            print("Тишина 30с — пропускаю собеседника")
+            await end_chat(page)
+            return True
         new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
         if new_chat_btn:
             try:
@@ -222,8 +298,13 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                 chat_messages.append({"role": ro, "content": t})
                 print(f"[{'Я' if ro == 'own' else 'Собеседник'}] {t}")
                 if ro == "other":
+                    last_partner_msg_time = time.time()
                     if is_ukrainian(t):
                         print(f"Украинский язык обнаружен: '{t}'. Завершаю чат.")
+                        await end_chat(page)
+                        return True
+                    if is_muslim(t):
+                        print(f"Мусульманка обнаружена: '{t}'. Завершаю чат.")
                         await end_chat(page)
                         return True
                     if not name_asked and not from_asked:
@@ -242,11 +323,8 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
 
     if name_asked:
         print("Спросила имя — отвечаю 'Максим'...")
-        await human_type(page, "Максим")
-        chat_messages.append({"role": "own", "content": "Максим"})
-        await asyncio.sleep(0.3)
-        await human_type(page, "Тебя?")
-        chat_messages.append({"role": "own", "content": "Тебя?"})
+        await human_type(page, "Максим, тебя?")
+        chat_messages.append({"role": "own", "content": "Максим, тебя?"})
     elif from_asked:
         print("Спросила 'откуда' — отвечаю 'Уже в гости собралась'...")
         await human_type(page, "Уже в гости собралась")
@@ -265,8 +343,27 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
     print("=== РЕЖИМ ОЖИДАНИЯ ===")
     print("Бот логирует сообщения. Для завершения нажмите Ctrl+C")
 
+    name_sent = name_asked
+    name_received_time = None
+    russkiy_sent = False
+    russkiy_answered = False
+    last_partner_msg_time = time.time()
+
     while True:
         await asyncio.sleep(1)
+
+        if time.time() - last_partner_msg_time > 30:
+            print("Тишина 30с — пропускаю собеседника")
+            await end_chat(page)
+            return True
+
+        if name_sent and name_received_time is not None and not russkiy_sent:
+            if time.time() - name_received_time >= 5:
+                russkiy_sent = True
+                print("Тишина 5с после имени — спрашиваю 'Русская??'")
+                await human_type(page, "Русская??")
+                chat_messages.append({"role": "own", "content": "Русская??"})
+
         new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
         if new_chat_btn:
             try:
@@ -285,19 +382,49 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                 chat_messages.append({"role": ro, "content": t})
                 print(f"[{'Я' if ro == 'own' else 'Собеседник'}] {t}")
                 if ro == "other":
+                    last_partner_msg_time = time.time()
                     if is_ukrainian(t):
                         print(f"Украинский язык обнаружен: '{t}'. Завершаю чат.")
                         await end_chat(page)
                         return True
+                    if is_muslim(t):
+                        print(f"Мусульманка обнаружена: '{t}'. Завершаю чат.")
+                        await end_chat(page)
+                        return True
+                    if is_dismissive(t):
+                        print(f"Игнорирующее сообщение: '{t}'. Завершаю чат.")
+                        await end_chat(page)
+                        return True
                     tl = t.lower()
+                    is_question = (
+                        "?" in t
+                        or any(p in tl for p in NAME_ASK_PATTERNS)
+                        or any(p in tl for p in FROM_ASK_PATTERNS)
+                        or any(p in tl for p in NICE_TO_MEET_PATTERNS)
+                        or is_age_question(t)
+                    )
+                    if russkiy_sent and not russkiy_answered and not is_question:
+                        russkiy_answered = True
+                        tl_check = t.lower().strip()
+                        first_word = tl_check.split()[0] if tl_check.split() else tl_check
+                        if first_word in ("да", "ага", "угу", "yes", "конечно", "точно"):
+                            print(f"Ответ на 'Русская??': '{t}' — отвечаю 'Оке'")
+                            await human_type(page, "Оке")
+                            chat_messages.append({"role": "own", "content": "Оке"})
+                        else:
+                            print(f"Ответ на 'Русская??': '{t}' — спрашиваю 'Кто'")
+                            await human_type(page, "Кто")
+                            chat_messages.append({"role": "own", "content": "Кто"})
+                        continue
+                    if name_sent and not name_received_time and not is_question:
+                        name_received_time = time.time()
+                        print(f"Имя получено: '{t}', жду 5с тишины...")
                     if not name_asked and any(p in tl for p in NAME_ASK_PATTERNS):
                         name_asked = True
                         print("Спросила имя — отвечаю 'Максим'...")
-                        await human_type(page, "Максим")
-                        chat_messages.append({"role": "own", "content": "Максим"})
-                        await asyncio.sleep(0.3)
-                        await human_type(page, "Тебя?")
-                        chat_messages.append({"role": "own", "content": "Тебя?"})
+                        await human_type(page, "Максим, тебя?")
+                        chat_messages.append({"role": "own", "content": "Максим, тебя?"})
+                        name_sent = True
                         lc = len(msgs)
                         break
                     elif not from_asked and any(p in tl for p in FROM_ASK_PATTERNS):
@@ -319,6 +446,26 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                         print("Спросила возраст — отвечаю '19'...")
                         await human_type(page, "19")
                         chat_messages.append({"role": "own", "content": "19"})
+                        lc = len(msgs)
+                        break
+                    elif is_confirmation_question(t):
+                        print(f"Подтверждающий вопрос 'а ты ... да' — отвечаю 'да'")
+                        await human_type(page, "да")
+                        chat_messages.append({"role": "own", "content": "да"})
+                    elif "есть" in tl and any(p in tl for p in AND_YOU_PATTERNS):
+                        print(f"Спросила 'а у тебя есть...' — отвечаю 'нет'")
+                        await human_type(page, "нет")
+                        chat_messages.append({"role": "own", "content": "нет"})
+                    elif any(p in tl for p in AND_YOU_PATTERNS):
+                        print(f"Спросила 'а ты?' — отвечаю 'Тож'")
+                        await human_type(page, "Тож")
+                        chat_messages.append({"role": "own", "content": "Тож"})
+                        lc = len(msgs)
+                        break
+                    elif any(p in tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
+                        print(f"Спросила 'что делаешь?' — отвечаю 'Бездельничаю'")
+                        await human_type(page, "Бездельничаю")
+                        chat_messages.append({"role": "own", "content": "Бездельничаю"})
                         lc = len(msgs)
                         break
             lc = len(msgs)
@@ -360,6 +507,42 @@ def is_ukrainian(text: str) -> bool:
             return True
     for p in UKRAINIAN_WORDS:
         if re.search(r'\b' + re.escape(p) + r'\b', t):
+            return True
+    return False
+
+MUSLIM_SUBSTRINGS = [
+    "ассалам", "алейкум", "асаляму", "алайкум",
+    "машаллах", "ма ша аллер", "ин ша аллах", "иншаллах",
+    "бисмилля", "субханаллах", "алхамдулиллях",
+    "халаль", "харом", "харам",
+    "мусульман", "мусульмани",
+]
+
+def is_muslim(text: str) -> bool:
+    if not text:
+        return False
+    t = text.lower().strip()
+    for p in MUSLIM_SUBSTRINGS:
+        if p in t:
+            return True
+    return False
+
+DISMISSIVE_PATTERNS = [
+    "молчи", "заткнись", "закройся",
+    "уйди", "пошел", "пошёл", "иди",
+    "отстань", "надоел", "надоела",
+    "не хочу", "некогда", "занята", "занят",
+    "нет времени", "не время",
+    "сам дурак", "тупой", "идиот",
+    "достал", "достала",
+]
+
+def is_dismissive(text: str) -> bool:
+    if not text:
+        return False
+    t = text.lower().strip()
+    for p in DISMISSIVE_PATTERNS:
+        if p in t:
             return True
     return False
 
@@ -444,7 +627,7 @@ async def main():
 
                 # 5. Ждем ответ
                 print("Ждем ответ на 'привет'...")
-                resp, count, resp_time = await wait_for_partner_msg(page, count, chat_messages)
+                resp, count, resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
 
                 # Если чат завершен во время ожидания
                 if resp is None:
@@ -456,10 +639,21 @@ async def main():
                     await end_chat(page)
                     continue
 
+                if is_muslim(resp):
+                    print(f"Мусульманка обнаружена: '{resp}'. Завершаю чат.")
+                    await end_chat(page)
+                    continue
+
+                if is_dismissive(resp):
+                    print(f"Игнорирующее сообщение: '{resp}'. Завершаю чат.")
+                    await end_chat(page)
+                    continue
+
                 # 6. Проверяем, не спросила ли "откуда"
                 resp_lower = resp.lower()
                 is_from_question = any(p in resp_lower for p in FROM_ASK_PATTERNS)
                 is_nice_to_meet = any(p in resp_lower for p in NICE_TO_MEET_PATTERNS)
+                is_and_you = any(p in resp_lower for p in AND_YOU_PATTERNS)
 
                 # 6. Если собеседник уже спросил возраст — отвечаем сразу
                 target_ages = [17, 18, 19]
@@ -502,6 +696,16 @@ async def main():
                     await human_type(page, "сколько лет")
                     chat_messages.append({"role": "own", "content": "сколько лет"})
                     count += 1
+                elif is_and_you:
+                    if is_confirmation_question(resp):
+                        print("Подтверждающий вопрос 'а ты ... да' — отвечаю 'да'")
+                        await human_type(page, "да")
+                        chat_messages.append({"role": "own", "content": "да"})
+                    else:
+                        print("Собеседник спросил 'а ты?' — отвечаю 'Тож'")
+                        await human_type(page, "Тож")
+                        chat_messages.append({"role": "own", "content": "Тож"})
+                    count += 1
                 elif not age_already_known:
                     await human_type(page, "сколько лет")
                     chat_messages.append({"role": "own", "content": "сколько лет"})
@@ -516,33 +720,52 @@ async def main():
 
                 # Если чат завершен во время ожидания
                 if age_text is None:
-                    # Проверяем, завершен ли чат или просто таймаут
-                    new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
-                    if new_chat_btn:
-                        is_visible = await new_chat_btn.is_visible()
-                        if is_visible:
-                            print("Чат завершен собеседником. Начинаю новый...")
-                            continue
+                    print("Собеседник не ответил на вопрос про возраст. Начинаю новый чат...")
+                    continue
 
-                if age_text and is_ukrainian(age_text):
+                if is_ukrainian(age_text):
                     print(f"Украинский язык обнаружен: '{age_text}'. Завершаю чат.")
                     await end_chat(page)
                     continue
-                    
-                    # Таймаут - молчит 10 секунд, спрашиваем ещё раз
-                    print("Собеседник молчит 10 секунд. Переспрашиваем...")
-                    await human_type(page, "ну скажи сколько лет?")
-                    chat_messages.append({"role": "own", "content": "ну скажи сколько лет?"})
-                    count += 1
-                    
-                    # Ждем ответ ещё раз (таймаут 10 секунд)
-                    age_text, count, age_resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
-                    
-                    if age_text is None:
-                        print("Собеседник не ответил. Начинаю новый чат...")
-                        continue
+
+                if is_muslim(age_text):
+                    print(f"Мусульманка обнаружена: '{age_text}'. Завершаю чат.")
+                    await end_chat(page)
+                    continue
 
                 print(f"Собеседник ответил: {age_text} (время ответа: {age_resp_time:.1f}с)")
+
+                # Проверяем, не спросила ли имя вместо возраста
+                age_text_lower = age_text.lower()
+                if any(p in age_text_lower for p in NAME_ASK_PATTERNS):
+                    print("Собеседник спросил имя — отвечаю 'Максим, тебя?'...")
+                    await human_type(page, "Максим, тебя?")
+                    chat_messages.append({"role": "own", "content": "Максим, тебя?"})
+                    count += 1
+                    # Ждем ответ на имя (таймаут 10 сек)
+                    name_resp, count, _ = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
+                    if name_resp is None:
+                        print("Собеседник не ответил на имя. Начинаю новый чат...")
+                        continue
+                    # Спрашиваем возраст после имени
+                    await human_type(page, "сколько лет")
+                    chat_messages.append({"role": "own", "content": "сколько лет"})
+                    count += 1
+                    # Ждем ответ про возраст
+                    age_text, count, age_resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
+                    if age_text is None:
+                        print("Собеседник не ответил на вопрос про возраст. Начинаю новый чат...")
+                        continue
+                    ages = [int(s) for s in re.findall(r'\d+', age_text)]
+                    is_target = any(a in target_ages for a in ages)
+                    if is_target:
+                        print(f"ПОДХОДИТ ({ages})!")
+                        await enter_wait_mode(page, count, chat_messages, str(ages[0]))
+                        continue
+                    else:
+                        print(f"Возраст не подходит: '{age_text}'. Завершаю чат.")
+                        await end_chat(page)
+                        continue
 
                 # 8. Проверка возраста (17, 18, 19)
                 ages = [int(s) for s in re.findall(r'\d+', age_text)]
@@ -658,6 +881,11 @@ async def main():
 
                         if age_text2 and is_ukrainian(age_text2):
                             print(f"Украинский язык обнаружен: '{age_text2}'. Завершаю чат.")
+                            await end_chat(page)
+                            continue
+
+                        if age_text2 and is_muslim(age_text2):
+                            print(f"Мусульманка обнаружена: '{age_text2}'. Завершаю чат.")
                             await end_chat(page)
                             continue
 
