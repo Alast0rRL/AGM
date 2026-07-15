@@ -5,53 +5,76 @@ import time
 import winsound
 import threading
 import queue
-import pyttsx3
 from datetime import datetime
 from playwright.async_api import async_playwright
 from config import USER_DATA_DIR, REMOTE_DEBUGGING_PORT
 
 # --- TTS (озвучка сообщений) ---
 _tts_queue = queue.Queue()
-MALE_VOICE = None
-FEMALE_VOICE = None
-
-def _init_tts():
-    global MALE_VOICE, FEMALE_VOICE
-    try:
-        engine = pyttsx3.init()
-        voices = engine.getProperty('voices')
-        for v in voices:
-            name = v.name.lower()
-            if FEMALE_VOICE is None and any(x in name for x in ['female', 'zira', 'helena', 'eva', 'anna', 'milena', 'irina']):
-                FEMALE_VOICE = v.id
-            if MALE_VOICE is None and any(x in name for x in ['male', 'david', 'dmitry', 'pavel', 'mikhail', 'boris', 'maxim']):
-                MALE_VOICE = v.id
-        engine.stop()
-    except Exception as e:
-        print(f"TTS init error: {e}")
+_tts_ready = False
+_TTS_MALE = "ru-RU-DmitryNeural"
+_TTS_FEMALE = "ru-RU-SvetlanaNeural"
 
 def _tts_worker():
+    global _tts_ready
+    import asyncio
+    import tempfile
+    import os
+    import ctypes
+    from ctypes import wintypes
+
+    print("  [TTS] worker starting...", flush=True)
+
+    try:
+        import edge_tts
+        print("  [TTS] edge_tts import OK", flush=True)
+    except Exception as e:
+        print(f"  [TTS] edge_tts import failed: {e}", flush=True)
+        return
+
+    winmm = ctypes.WinDLL('winmm.dll')
+    mciSendStringW = winmm.mciSendStringW
+    mciSendStringW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT, wintypes.HWND]
+    mciSendStringW.restype = wintypes.UINT
+
+    def play_mp3(path):
+        mciSendStringW(f'open "{path}" type mpegvideo alias tts_media', None, 0, None)
+        mciSendStringW('play tts_media wait', None, 0, None)
+        mciSendStringW('close tts_media', None, 0, None)
+
+    _tts_ready = True
+    print("  [TTS] ready, waiting for messages...", flush=True)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     while True:
-        text, voice_id = _tts_queue.get()
+        text, female = _tts_queue.get()
+        voice = _TTS_FEMALE if female else _TTS_MALE
+        tmp_path = None
         try:
-            engine = pyttsx3.init()
-            if voice_id:
-                engine.setProperty('voice', voice_id)
-            engine.setProperty('rate', 170)
-            engine.say(text)
-            engine.runAndWait()
-            engine.stop()
-        except Exception:
-            pass
+            print(f"  [TTS] generating: {text[:30]}... (voice={voice})", flush=True)
+            comm = edge_tts.Communicate(text, voice)
+            fd, tmp_path = tempfile.mkstemp(suffix=".mp3")
+            os.close(fd)
+            loop.run_until_complete(comm.save(tmp_path))
+            file_size = os.path.getsize(tmp_path)
+            print(f"  [TTS] file saved: {tmp_path} ({file_size} bytes)", flush=True)
+            play_mp3(tmp_path)
+            print(f"  [TTS] playback done", flush=True)
+        except Exception as e:
+            print(f"  [TTS] speak error: {type(e).__name__}: {e}", flush=True)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
         _tts_queue.task_done()
 
-_init_tts()
-_tts_thread = threading.Thread(target=_tts_worker, daemon=True)
-_tts_thread.start()
-
 async def speak(text, female=True):
-    voice_id = FEMALE_VOICE if female else MALE_VOICE
-    _tts_queue.put((text, voice_id))
+    _tts_queue.put((text, female))
+    print(f"  [TTS] queued: {text[:30]}", flush=True)
 
 # Селекторы (настроены под текущую верстку Nekto.me)
 START_BUTTON = "#searchCompanyBtn"
@@ -90,15 +113,22 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
     start_time = time.time()
     
     while True:
-        new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
-        if new_chat_btn:
+        elapsed = time.time() - start_time
+        if elapsed > 5:
+            input_field = await page.query_selector(INPUT_FIELD)
+            input_visible = False
             try:
-                is_visible = await new_chat_btn.is_visible()
-                if is_visible:
-                    print(f"  [Chat] Найден кнопка 'Начать новый чат' - чат завершен")
-                    return None, last_count, 0
+                input_visible = input_field and await input_field.is_visible()
             except:
                 pass
+            new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
+            new_chat_visible = False
+            try:
+                new_chat_visible = new_chat_btn and await new_chat_btn.is_visible()
+            except:
+                pass
+            if not input_visible or new_chat_visible:
+                return None, last_count, 0
         
         current_msgs = await page.query_selector_all(MESSAGES)
         if len(current_msgs) > last_count:
@@ -124,11 +154,14 @@ async def start_new_chat(page):
     """Начинает новый чат или продолжает активный"""
     print("\n--- Запуск нового цикла ---")
     
-    # Проверяем, есть ли уже активный чат (поле ввода видимо)
+    # Проверяем, есть ли уже активный чат (поле ввода видимо, кнопка нового чата нет)
     try:
         existing_input = await page.query_selector(INPUT_FIELD)
-        if existing_input and await existing_input.is_visible():
-            print("Активный чат уже найден, продолжаем...")
+        new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
+        btn_visible = False
+        if new_chat_btn:
+            btn_visible = await new_chat_btn.is_visible()
+        if existing_input and await existing_input.is_visible() and not btn_visible:
             msgs = await page.query_selector_all(MESSAGES)
             return len(msgs)
     except:
@@ -139,7 +172,6 @@ async def start_new_chat(page):
         new_chat_btn = await page.wait_for_selector(NEW_CHAT_BUTTON, timeout=2000)
         if new_chat_btn:
             await new_chat_btn.click()
-            print("Нажата кнопка 'Начать новый чат'")
             await asyncio.sleep(1)
     except:
         # Если кнопки нет, идем на главную и ищем основную кнопку
@@ -151,10 +183,7 @@ async def start_new_chat(page):
         try:
             await page.wait_for_selector(START_BUTTON, timeout=10000)
             await page.click(START_BUTTON)
-            print("Нажата кнопка поиска собеседника")
         except:
-            # Перезагружаем страницу и пробуем снова
-            print("Кнопка поиска не найдена, перезагружаю страницу...")
             try:
                 await page.reload(timeout=15000)
             except:
@@ -163,9 +192,7 @@ async def start_new_chat(page):
             try:
                 await page.wait_for_selector(START_BUTTON, timeout=20000)
                 await page.click(START_BUTTON)
-                print("Нажата кнопка поиска собеседника (после перезагрузки)")
             except:
-                print("Кнопка поиска не найдена даже после перезагрузки")
                 raise
     
     # Принять правила (если выскочат)
@@ -176,7 +203,6 @@ async def start_new_chat(page):
         pass
     
     # Ждем появления поля ввода (собеседник найден)
-    print("Ищем собеседника...")
     try:
         await page.wait_for_selector(INPUT_FIELD, timeout=300000)
         print("Собеседник найден!")
@@ -196,13 +222,11 @@ async def end_chat(page):
             stop = await page.wait_for_selector(selector, timeout=2000)
             if stop:
                 await stop.click()
-                print(f"Нажата кнопка завершения ({selector})")
                 break
         except:
             continue
 
     if not stop:
-        print("Не удалось найти кнопку завершения")
         return
 
     # 2. Ждём и нажимаем подтверждение в диалоговом окне
@@ -213,13 +237,10 @@ async def end_chat(page):
             confirm = await page.wait_for_selector(selector, timeout=3000)
             if confirm and await confirm.is_visible():
                 await confirm.click()
-                print("Чат завершен (подтверждено)")
                 await asyncio.sleep(1)
                 return
         except:
             continue
-
-    print("Не удалось найти кнопку подтверждения")
 
 async def save_chat_log(messages: list, age: str):
     """Сохраняет лог чата в файл"""
@@ -241,7 +262,7 @@ async def save_chat_log(messages: list, age: str):
             role = "Я" if msg["role"] == "own" else "Собеседник"
             f.write(f"[{role}] {msg['content']}\n")
     
-    print(f"Лог чата сохранён: {filename}")
+    print(f"Лог: {filename}")
     return filename
 
 AGE_ASK_PATTERNS = [
@@ -263,7 +284,7 @@ AGE_ASK_PATTERNS = [
     "а тибе", "а тибя",
     "тибе", "тибя",
     "теюе", "а теюе", "теье", "а теье",
-    "атебе", "ате",
+    "атебе",
 ]
 
 NAME_ASK_PATTERNS = [
@@ -283,7 +304,7 @@ NICE_TO_MEET_PATTERNS = [
     "приятно познакомиться", "приятно знакомиться",
     "приятно познакомится", "приятно знакомится",
     "рада знакомству", "рад знакомству",
-    "приятно", "знакомы",
+    "приятно",
 ]
 
 AND_YOU_PATTERNS = [
@@ -320,23 +341,25 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
     from_asked = False
     nice_to_meet = False
     age_asked = False
-    last_partner_msg_time = time.time()
 
     for _ in range(60):
         await asyncio.sleep(1)
-        if time.time() - last_partner_msg_time > 30:
-            print("Тишина 30с — пропускаю собеседника")
-            await end_chat(page)
-            return True
+        input_field = await page.query_selector(INPUT_FIELD)
+        input_visible = False
+        try:
+            input_visible = input_field and await input_field.is_visible()
+        except:
+            pass
         new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
-        if new_chat_btn:
-            try:
-                if await new_chat_btn.is_visible():
-                    if len(chat_messages) > 10:
-                        await save_chat_log(chat_messages, label_age)
-                    return True
-            except:
-                pass
+        new_chat_visible = False
+        try:
+            new_chat_visible = new_chat_btn and await new_chat_btn.is_visible()
+        except:
+            pass
+        if not input_visible or new_chat_visible:
+            if len(chat_messages) > 10:
+                await save_chat_log(chat_messages, label_age)
+            return True
         msgs = await page.query_selector_all(MESSAGES)
         if len(msgs) > lc:
             for i in range(lc, len(msgs)):
@@ -344,16 +367,13 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                 r = await get_msg_role(page, msgs[i])
                 ro = "own" if r == "self" else "other"
                 chat_messages.append({"role": ro, "content": t})
-                print(f"[{'Я' if ro == 'own' else 'Собеседник'}] {t}")
                 if ro == "other":
+                    print(f"[Собеседник] {t}")
                     await speak(t, female=True)
-                    last_partner_msg_time = time.time()
                     if is_ukrainian(t):
-                        print(f"Украинский язык обнаружен: '{t}'. Завершаю чат.")
                         await end_chat(page)
                         return True
                     if is_muslim(t):
-                        print(f"Мусульманка обнаружена: '{t}'. Завершаю чат.")
                         await end_chat(page)
                         return True
                     if not name_asked and not from_asked:
@@ -371,57 +391,49 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
             break
 
     if name_asked:
-        print("Спросила имя — отвечаю 'Максим'...")
         await human_type(page, "Максим, тебя?")
         chat_messages.append({"role": "own", "content": "Максим, тебя?"})
     elif from_asked:
-        print("Спросила 'откуда' — отвечаю 'Уже в гости собралась'...")
         await human_type(page, "Уже в гости собралась")
         chat_messages.append({"role": "own", "content": "Уже в гости собралась"})
     elif nice_to_meet:
-        print("Сказала 'приятно познакомиться' — отвечаю 'взаимно'...")
         await human_type(page, "взаимно")
         chat_messages.append({"role": "own", "content": "взаимно"})
     elif age_asked:
-        print("Спросила возраст — отвечаю '19'...")
         await human_type(page, "19")
         chat_messages.append({"role": "own", "content": "19"})
-    else:
-        print("Вопрос не задан — логирую")
-
-    print("=== РЕЖИМ ОЖИДАНИЯ ===")
-    print("Бот логирует сообщения. Для завершения нажмите Ctrl+C")
 
     name_sent = name_asked
     name_received_time = None
     russkiy_sent = False
     russkiy_answered = False
-    last_partner_msg_time = time.time()
+    and_you_answered = False
 
     while True:
         await asyncio.sleep(1)
 
-        if time.time() - last_partner_msg_time > 30:
-            print("Тишина 30с — пропускаю собеседника")
-            await end_chat(page)
-            return True
-
         if name_sent and name_received_time is not None and not russkiy_sent:
             if time.time() - name_received_time >= 5:
                 russkiy_sent = True
-                print("Тишина 5с после имени — спрашиваю 'Русская??'")
                 await human_type(page, "Русская??")
                 chat_messages.append({"role": "own", "content": "Русская??"})
 
+        input_field = await page.query_selector(INPUT_FIELD)
+        input_visible = False
+        try:
+            input_visible = input_field and await input_field.is_visible()
+        except:
+            pass
         new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
-        if new_chat_btn:
-            try:
-                if await new_chat_btn.is_visible():
-                    if len(chat_messages) > 10:
-                        await save_chat_log(chat_messages, label_age)
-                    return True
-            except:
-                pass
+        new_chat_visible = False
+        try:
+            new_chat_visible = new_chat_btn and await new_chat_btn.is_visible()
+        except:
+            pass
+        if not input_visible or new_chat_visible:
+            if len(chat_messages) > 10:
+                await save_chat_log(chat_messages, label_age)
+            return True
         msgs = await page.query_selector_all(MESSAGES)
         if len(msgs) > lc:
             for i in range(lc, len(msgs)):
@@ -429,20 +441,16 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                 r = await get_msg_role(page, msgs[i])
                 ro = "own" if r == "self" else "other"
                 chat_messages.append({"role": ro, "content": t})
-                print(f"[{'Я' if ro == 'own' else 'Собеседник'}] {t}")
                 if ro == "other":
+                    print(f"[Собеседник] {t}")
                     await speak(t, female=True)
-                    last_partner_msg_time = time.time()
                     if is_ukrainian(t):
-                        print(f"Украинский язык обнаружен: '{t}'. Завершаю чат.")
                         await end_chat(page)
                         return True
                     if is_muslim(t):
-                        print(f"Мусульманка обнаружена: '{t}'. Завершаю чат.")
                         await end_chat(page)
                         return True
                     if is_dismissive(t):
-                        print(f"Игнорирующее сообщение: '{t}'. Завершаю чат.")
                         await end_chat(page)
                         return True
                     tl = t.lower()
@@ -453,25 +461,29 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                         or any(p in tl for p in NICE_TO_MEET_PATTERNS)
                         or is_age_question(t)
                     )
-                    if russkiy_sent and not russkiy_answered and not is_question:
+                    if russkiy_sent and not russkiy_answered:
                         russkiy_answered = True
                         tl_check = t.lower().strip()
                         first_word = tl_check.split()[0] if tl_check.split() else tl_check
-                        if first_word in ("да", "ага", "угу", "yes", "конечно", "точно"):
-                            print(f"Ответ на 'Русская??': '{t}' — отвечаю 'Оке'")
+                        is_negative = (
+                            first_word in ("нет", "не", "no")
+                            or "не русск" in tl_check
+                            or "не русская" in tl_check
+                            or "не русский" in tl_check
+                        )
+                        is_positive = first_word in ("да", "ага", "угу", "yes", "конечно", "точно", "русская", "русский")
+                        if is_positive:
                             await human_type(page, "Оке")
                             chat_messages.append({"role": "own", "content": "Оке"})
-                        else:
-                            print(f"Ответ на 'Русская??': '{t}' — спрашиваю 'Кто'")
+                            continue
+                        elif is_negative:
                             await human_type(page, "Кто")
                             chat_messages.append({"role": "own", "content": "Кто"})
-                        continue
+                            continue
                     if name_sent and not name_received_time and not is_question:
                         name_received_time = time.time()
-                        print(f"Имя получено: '{t}', жду 5с тишины...")
                     if not name_asked and any(p in tl for p in NAME_ASK_PATTERNS):
                         name_asked = True
-                        print("Спросила имя — отвечаю 'Максим'...")
                         await human_type(page, "Максим, тебя?")
                         chat_messages.append({"role": "own", "content": "Максим, тебя?"})
                         name_sent = True
@@ -479,84 +491,50 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                         break
                     elif not from_asked and any(p in tl for p in FROM_ASK_PATTERNS):
                         from_asked = True
-                        print("Спросила 'откуда' — отвечаю 'Уже в гости собралась'...")
                         await human_type(page, "Уже в гости собралась")
                         chat_messages.append({"role": "own", "content": "Уже в гости собралась"})
                         lc = len(msgs)
                         break
                     elif not nice_to_meet and any(p in tl for p in NICE_TO_MEET_PATTERNS):
                         nice_to_meet = True
-                        print("Сказала 'приятно познакомиться' — отвечаю 'взаимно'...")
                         await human_type(page, "взаимно")
                         chat_messages.append({"role": "own", "content": "взаимно"})
                         lc = len(msgs)
                         break
                     elif not age_asked and is_age_question(t):
                         age_asked = True
-                        print("Спросила возраст — отвечаю '19'...")
                         await human_type(page, "19")
                         chat_messages.append({"role": "own", "content": "19"})
                         lc = len(msgs)
                         break
                     elif is_confirmation_question(t):
-                        print(f"Подтверждающий вопрос 'а ты ... да' — отвечаю 'да'")
                         await human_type(page, "да")
                         chat_messages.append({"role": "own", "content": "да"})
-                    elif "есть" in tl and any(p in tl for p in AND_YOU_PATTERNS):
-                        print(f"Спросила 'а у тебя есть...' — отвечаю 'нет'")
+                    elif "есть" in tl and not and_you_answered and any(p in tl for p in AND_YOU_PATTERNS):
+                        and_you_answered = True
                         await human_type(page, "нет")
                         chat_messages.append({"role": "own", "content": "нет"})
-                    elif any(p in tl for p in AND_YOU_PATTERNS):
-                        print(f"Спросила 'а ты?' — отвечаю 'Тож'")
+                    elif not and_you_answered and any(p in tl for p in AND_YOU_PATTERNS):
+                        and_you_answered = True
                         await human_type(page, "Тож")
                         chat_messages.append({"role": "own", "content": "Тож"})
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
-                        print(f"Спросила 'что делаешь?' — отвечаю 'Бездельничаю'")
                         await human_type(page, "Бездельничаю")
                         chat_messages.append({"role": "own", "content": "Бездельничаю"})
                         lc = len(msgs)
                         break
             lc = len(msgs)
 
-UKRAINIAN_CHARS = re.compile(r'[ґїє]', re.IGNORECASE)
-
-UKRAINIAN_WORDS = [
-    "привіт", "привітик",
-    "паляниця",
-    "слава україні", "слава нації",
-    "хлопець", "дівчина",
-    "гарно", "гарний", "гарна",
-    "дуже",
-    "його",
-    "який", "яка", "яке", "які",
-    "цей", "ця", "це", "ці",
-    "але",
-    "що",
-    "він", "вона", "воно",
-    "ні",
-]
-
-UKRAINIAN_SUBSTRINGS = [
-    "привiт",
-    "слава украини",
-    "херсон", "харків", "київ", "львів", "дніпро", "одеса", "крим",
-    "москаль", "рашист", "русский военный корабль",
-    "бандера", "азов",
-]
+UKRAINIAN_TRIGGERS = ["привiт", "привіт", "тобi", "тобі"]
 
 def is_ukrainian(text: str) -> bool:
     if not text:
         return False
     t = text.lower().strip()
-    if UKRAINIAN_CHARS.search(t):
-        return True
-    for p in UKRAINIAN_SUBSTRINGS:
-        if p in t:
-            return True
-    for p in UKRAINIAN_WORDS:
-        if re.search(r'\b' + re.escape(p) + r'\b', t):
+    for trigger in UKRAINIAN_TRIGGERS:
+        if trigger in t:
             return True
     return False
 
@@ -616,16 +594,22 @@ async def wait_and_reply_age(page, count, chat_messages, partner_msg):
     asked = is_age_question(partner_msg)
 
     if not asked:
-        print("Жду 15 секунд (или пока спросит возраст)...")
         for _ in range(15):
             await asyncio.sleep(1)
             btn = await page.query_selector(NEW_CHAT_BUTTON)
-            if btn:
-                try:
-                    if await btn.is_visible():
-                        return count
-                except:
-                    pass
+            input_field = await page.query_selector(INPUT_FIELD)
+            input_visible = False
+            try:
+                input_visible = input_field and await input_field.is_visible()
+            except:
+                pass
+            new_chat_visible = False
+            try:
+                new_chat_visible = btn and await btn.is_visible()
+            except:
+                pass
+            if not input_visible or new_chat_visible:
+                return count
             msgs = await page.query_selector_all(MESSAGES)
             if len(msgs) > count:
                 for i in range(count, len(msgs)):
@@ -642,10 +626,6 @@ async def wait_and_reply_age(page, count, chat_messages, partner_msg):
             if asked:
                 break
 
-    if asked:
-        print("Спросила возраст — отвечаю '19'...")
-    else:
-        print("15 секунд прошло — отвечаю '19'...")
     await human_type(page, "19")
     chat_messages.append({"role": "own", "content": "19"})
     return count
@@ -663,6 +643,10 @@ async def main():
         pages = browser.pages
         page = pages[0] if pages else await browser.new_page()
 
+        # Запускаем TTS worker
+        tts_thread = threading.Thread(target=_tts_worker, daemon=True)
+        tts_thread.start()
+
         while True:
             try:
                 # Запускаем новый чат
@@ -671,32 +655,28 @@ async def main():
                 # Список для сбора всех сообщений чата
                 chat_messages = []
 
-                # 4. Пишем "привет" - сразу без задержки
-                await human_type(page, "привет")
-                chat_messages.append({"role": "own", "content": "привет"})
-                count += 1 # Наше сообщение
+                # Проверяем, есть ли уже сообщения в чате (не отправляем "привет" повторно)
+                if count == 0:
+                    await human_type(page, "привет")
+                    chat_messages.append({"role": "own", "content": "привет"})
+                    count += 1
 
                 # 5. Ждем ответ
-                print("Ждем ответ на 'привет'...")
                 resp, count, resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
 
                 # Если чат завершен во время ожидания
                 if resp is None:
-                    print("Чат завершен собеседником. Начинаю новый...")
                     continue
 
                 if is_ukrainian(resp):
-                    print(f"Украинский язык обнаружен: '{resp}'. Завершаю чат.")
                     await end_chat(page)
                     continue
 
                 if is_muslim(resp):
-                    print(f"Мусульманка обнаружена: '{resp}'. Завершаю чат.")
                     await end_chat(page)
                     continue
 
                 if is_dismissive(resp):
-                    print(f"Игнорирующее сообщение: '{resp}'. Завершаю чат.")
                     await end_chat(page)
                     continue
 
@@ -718,10 +698,8 @@ async def main():
                 if any(a in target_ages for a in _initial_ages):
                     age_already_known = True
                     age_text = resp
-                    print(f"Собеседник указал возраст в первом ответе: {_initial_ages}")
 
                 if is_age_question(resp):
-                    print("Собеседник спросил возраст — отвечаю '19' и спрашиваю в ответ...")
                     await human_type(page, "19")
                     chat_messages.append({"role": "own", "content": "19"})
                     said_19 = True
@@ -731,7 +709,6 @@ async def main():
                         chat_messages.append({"role": "own", "content": "тебе сколько?"})
                         count += 1
                 elif is_nice_to_meet:
-                    print("Собеседник сказал 'приятно познакомиться' — отвечаю 'взаимно'...")
                     await human_type(page, "взаимно")
                     chat_messages.append({"role": "own", "content": "взаимно"})
                     count += 1
@@ -739,7 +716,6 @@ async def main():
                     chat_messages.append({"role": "own", "content": "сколько лет"})
                     count += 1
                 elif is_from_question:
-                    print("Собеседник спросил 'откуда' — отвечаю 'Уже в гости собралась'...")
                     await human_type(page, "Уже в гости собралась")
                     chat_messages.append({"role": "own", "content": "Уже в гости собралась"})
                     count += 1
@@ -749,11 +725,9 @@ async def main():
                     count += 1
                 elif is_and_you:
                     if is_confirmation_question(resp):
-                        print("Подтверждающий вопрос 'а ты ... да' — отвечаю 'да'")
                         await human_type(page, "да")
                         chat_messages.append({"role": "own", "content": "да"})
                     else:
-                        print("Собеседник спросил 'а ты?' — отвечаю 'Тож'")
                         await human_type(page, "Тож")
                         chat_messages.append({"role": "own", "content": "Тож"})
                     count += 1
@@ -763,40 +737,30 @@ async def main():
                     count += 1
 
                 # 7. Ждем ответ про возраст (таймаут 10 секунд) — если ещё не знаем
-                if age_already_known:
-                    print(f"Возраст уже известен (пропускаем ожидание)")
-                else:
-                    print("Ждем возраст...")
+                if not age_already_known:
                     age_text, count, age_resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
 
                 # Если чат завершен во время ожидания
                 if age_text is None:
-                    print("Собеседник не ответил на вопрос про возраст. Начинаю новый чат...")
                     continue
 
                 if is_ukrainian(age_text):
-                    print(f"Украинский язык обнаружен: '{age_text}'. Завершаю чат.")
                     await end_chat(page)
                     continue
 
                 if is_muslim(age_text):
-                    print(f"Мусульманка обнаружена: '{age_text}'. Завершаю чат.")
                     await end_chat(page)
                     continue
-
-                print(f"Собеседник ответил: {age_text} (время ответа: {age_resp_time:.1f}с)")
 
                 # Проверяем, не спросила ли имя вместо возраста
                 age_text_lower = age_text.lower()
                 if any(p in age_text_lower for p in NAME_ASK_PATTERNS):
-                    print("Собеседник спросил имя — отвечаю 'Максим, тебя?'...")
                     await human_type(page, "Максим, тебя?")
                     chat_messages.append({"role": "own", "content": "Максим, тебя?"})
                     count += 1
                     # Ждем ответ на имя (таймаут 10 сек)
                     name_resp, count, _ = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
                     if name_resp is None:
-                        print("Собеседник не ответил на имя. Начинаю новый чат...")
                         continue
                     # Спрашиваем возраст после имени
                     await human_type(page, "сколько лет")
@@ -805,7 +769,6 @@ async def main():
                     # Ждем ответ про возраст
                     age_text, count, age_resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
                     if age_text is None:
-                        print("Собеседник не ответил на вопрос про возраст. Начинаю новый чат...")
                         continue
                     ages = [int(s) for s in re.findall(r'\d+', age_text)]
                     is_target = any(a in target_ages for a in ages)
@@ -814,7 +777,6 @@ async def main():
                         await enter_wait_mode(page, count, chat_messages, str(ages[0]))
                         continue
                     else:
-                        print(f"Возраст не подходит: '{age_text}'. Завершаю чат.")
                         await end_chat(page)
                         continue
 
@@ -826,7 +788,6 @@ async def main():
                 if is_target:
                     print(f"ПОДХОДИТ ({ages})!")
                     if not said_19 and not age_already_known and is_age_question(age_text):
-                        print("Собеседник также спросил возраст — отвечаю '19'...")
                         await human_type(page, "19")
                         chat_messages.append({"role": "own", "content": "19"})
                         said_19 = True
@@ -834,21 +795,12 @@ async def main():
                     await enter_wait_mode(page, count, chat_messages, str(ages[0]))
                     continue
                 else:
-                    # Возраст не назван или не подходит - переспрашиваем или уточняем
-                    print(f"Возраст не назван или не подходит: '{age_text}' (найдено: {ages})")
-
-                    # Проверяем, есть ли в ответе числа (возможно возраст в другом формате)
                     if ages:
-                        # Возраст есть, но не 17-19
-                        print("Возраст не подходит (не 17-19). Завершаю чат.")
                         await end_chat(page)
                     else:
-                        # Проверяем, спрашивает ли собеседник о возрасте бота
                         asked_age = is_age_question(age_text)
                         
                         if asked_age:
-                            # Собеседник спрашивает возраст бота - отвечаем "19"
-                            print("Собеседник спрашивает возраст - отвечаю '19'...")
                             await human_type(page, "19")
                             chat_messages.append({"role": "own", "content": "19"})
                             said_19 = True
@@ -857,99 +809,59 @@ async def main():
                             chat_messages.append({"role": "own", "content": "тебе сколько?"})
                             count += 2
                             
-                            # Ждем ответ (таймаут 10 секунд)
                             age_text2, count, age_resp_time2 = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
                             
                             if age_text2 is None:
-                                print("Собеседник не ответил. Начинаю новый чат...")
                                 continue
                             
-                            print(f"Собеседник ответил: {age_text2}")
                             ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
                             is_target2 = any(a in target_ages for a in ages2)
-                        # Возраст не назван - переспрашиваем только если ответ был медленным (>3 сек)
                         elif age_resp_time > 3:
-                            print("Переспрашиваем возраст...")
                             await human_type(page, "ну скажи сколько лет?")
                             chat_messages.append({"role": "own", "content": "ну скажи сколько лет?"})
                             count += 1
 
-                            # Ждем ответ ещё раз (таймаут 10 секунд)
-                            print("Ждем возраст (повторно)...")
                             age_text2, count, age_resp_time2 = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
 
                             if age_text2 is None:
-                                # Проверяем, завершен ли чат или просто таймаут
-                                new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
-                                if new_chat_btn:
-                                    is_visible = await new_chat_btn.is_visible()
-                                    if is_visible:
-                                        print("Чат завершен собеседником. Начинаю новый...")
-                                        continue
-                                
-                                print("Собеседник не ответил. Начинаю новый чат...")
                                 continue
 
-
-                            print(f"Собеседник ответил: {age_text2}")
                             ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
                             is_target2 = any(a in target_ages for a in ages2)
                         elif age_resp_time <= 3:
-                            # Быстрый ответ (<3 сек) но без возраста - просто ждём ещё
-                            # Не переспрашиваем сразу, даём собеседнику время
-                            print("Быстрый ответ - ждём ещё сообщений...")
                             age_text2, count, age_resp_time2 = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
                             
                             if age_text2 is None:
-                                # Таймаут 10 секунд - молчит, переспрашиваем
-                                new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
-                                if new_chat_btn:
-                                    is_visible = await new_chat_btn.is_visible()
-                                    if is_visible:
-                                        print("Чат завершен собеседником. Начинаю новый...")
-                                        continue
+                                continue
                                 
-                                print("Собеседник молчит. Переспрашиваем...")
                                 await human_type(page, "ну скажи сколько лет?")
                                 chat_messages.append({"role": "own", "content": "ну скажи сколько лет?"})
                                 count += 1
                                 
-                                # Ждем ответ ещё раз (таймаут 10 секунд)
                                 age_text2, count, age_resp_time2 = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
                                 
                                 if age_text2 is None:
-                                    print("Собеседник не ответил. Начинаю новый чат...")
                                     continue
                                 
-                                print(f"Собеседник ответил: {age_text2}")
                                 ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
                                 is_target2 = any(a in target_ages for a in ages2)
                             else:
-                                # Пришло новое сообщение - проверяем возраст
-                                print(f"Собеседник ответил: {age_text2}")
                                 ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
                                 is_target2 = any(a in target_ages for a in ages2)
 
                         if age_text2 and is_ukrainian(age_text2):
-                            print(f"Украинский язык обнаружен: '{age_text2}'. Завершаю чат.")
                             await end_chat(page)
                             continue
 
                         if age_text2 and is_muslim(age_text2):
-                            print(f"Мусульманка обнаружена: '{age_text2}'. Завершаю чат.")
                             await end_chat(page)
                             continue
 
                         if is_target2:
                             print(f"ПОДХОДИТ ({ages2})!")
-                            if said_19 or age_already_known:
-                                await enter_wait_mode(page, count, chat_messages, str(ages2[0]))
-                            else:
-                                print("Не говорю '19' сразу — жду вопрос от собеседника")
-                                await enter_wait_mode(page, count, chat_messages, str(ages2[0]))
+                            await enter_wait_mode(page, count, chat_messages, str(ages2[0]))
                             continue
                         else:
-                            print(f"Возраст всё ещё не подходит: '{age_text2}'. Завершаю чат.")
                             await end_chat(page)
 
                 await asyncio.sleep(1) # Пауза перед новым кругом
