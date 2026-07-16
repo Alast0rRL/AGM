@@ -278,12 +278,13 @@ AGE_ASK_PATTERNS = [
     # С "возраст"
     "твой возраст",
     # Сленг
-    "скока", "скоко", "сколька", "сколко",
-    "скока тебе", "скока лет",
-    # "а тебе"/"а те" удалены — это "and you?", а не вопрос возраста
+    "скока", "скоко", "сколька", "сколко", "скок",
+    "скока тебе", "скока лет", "скок лет",
     # Славянские формы
     "самой", "самому",
     # Опечатки
+    "сколика", "сколик",
+    "скилко", "скалко", "колко",
     "а тибе", "а тибя",
     "тибе", "тибя",
     "теюе", "а теюе", "теье", "а теье",
@@ -358,11 +359,19 @@ AND_YOU_PATTERNS = [
     "а тебе", "а те",
     "а вам", "а вас",
     "тебе?", "тебя?", "вам?", "вас?",
+    "тебе", "тебя", "вам", "вас",
 ]
 
 WHAT_ARE_YOU_DOING_PATTERNS = [
     "что делаешь", "чем занят", "чем занимаешься",
     "что сейчас делаешь", "чем шумишь",
+]
+
+HOW_ARE_YOU_PATTERNS = [
+    "как дела", "как у дела", "как твои дела",
+    "как сам", "как сама", "как ты", "как жизнь",
+    "что нового", "как поживаешь",
+    "как оно", "как там",
 ]
 
 CONFIRMATION_PATTERNS = ["да", "верно", "точно", "правда", "ага"]
@@ -401,6 +410,7 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
     from_asked = False
     nice_to_meet = False
     age_asked = False
+    age_replied_in_loop = False
 
     log(f"  [enter_wait_mode] age={label_age}, count={count}")
     for _ in range(60):
@@ -446,6 +456,11 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                         log(f"  [wait_mode] and-you in loop1: '{t}'")
                         await human_type(page, "19")
                         chat_messages.append({"role": "own", "content": "19"})
+                        age_replied_in_loop = True
+                    if any(p in tl for p in HOW_ARE_YOU_PATTERNS):
+                        log(f"  [wait_mode] how-are-you in loop1: '{t}'")
+                        await human_type(page, "норм, ты как?")
+                        chat_messages.append({"role": "own", "content": "норм, ты как?"})
                     if not name_asked and not from_asked:
                         if any(p in tl for p in NAME_ASK_PATTERNS):
                             name_asked = True
@@ -472,7 +487,7 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
     elif nice_to_meet:
         await human_type(page, "взаимно")
         chat_messages.append({"role": "own", "content": "взаимно"})
-    elif age_asked:
+    elif age_asked and not age_replied_in_loop:
         await human_type(page, "19")
         chat_messages.append({"role": "own", "content": "19"})
 
@@ -621,6 +636,12 @@ async def enter_wait_mode(page, count, chat_messages, label_age):
                         chat_messages.append({"role": "own", "content": "Бездельничаю"})
                         lc = len(msgs)
                         break
+                    elif any(p in tl for p in HOW_ARE_YOU_PATTERNS):
+                        log(f"  [wait_mode] how-are-you detected: '{t}'")
+                        await human_type(page, "норм, ты как?")
+                        chat_messages.append({"role": "own", "content": "норм, ты как?"})
+                        lc = len(msgs)
+                        break
                     else:
                         log(f"  [wait_mode] UNHANDLED msg: '{t}' (tl='{tl}')")
             lc = len(msgs)
@@ -657,6 +678,7 @@ DISMISSIVE_PATTERNS = [
     "молчи", "заткнись", "закройся",
     "уйди", "пошел", "пошёл",
     "отстань", "надоел", "надоела",
+    "задолбал", "задолбала", "задолбали",
     "не хочу", "некогда", "занята", "занят",
     "нет времени", "не время",
     "сам дурак", "тупой", "идиот",
@@ -689,6 +711,12 @@ def is_underage(text: str) -> bool:
     t = text.lower().strip()
     for p in UNDERAGE_PATTERNS:
         if p in t:
+            return True
+    # Проверяем числа в начале текста (например "14 я маленькая")
+    leading = re.match(r'^(\d+)', t)
+    if leading:
+        age = int(leading.group(1))
+        if 0 < age < 17:
             return True
     return False
 
@@ -814,6 +842,7 @@ async def main():
                 is_and_you = any(p in resp_lower for p in AND_YOU_PATTERNS)
                 is_self_intro = is_self_introduction(resp)
                 is_name_ask = any(p in resp_lower for p in NAME_ASK_PATTERNS)
+                is_how_are_you = any(p in resp_lower for p in HOW_ARE_YOU_PATTERNS)
 
                 log(f"=== Анализ ответа: '{resp}' ===")
                 log(f"  is_age_question={is_age_question(resp)}")
@@ -822,6 +851,7 @@ async def main():
                 log(f"  is_and_you={is_and_you}")
                 log(f"  is_self_intro={is_self_intro}")
                 log(f"  is_name_ask={is_name_ask}")
+                log(f"  is_how_are_you={is_how_are_you}")
                 log(f"  is_ukrainian={is_ukrainian(resp)}")
                 log(f"  is_muslim={is_muslim(resp)}")
                 log(f"  is_dismissive={is_dismissive(resp)}")
@@ -838,6 +868,13 @@ async def main():
                 if any(a in target_ages for a in _initial_ages):
                     age_already_known = True
                     age_text = resp
+
+                # Проверяем на несовершеннолетие в начальном ответе
+                _underage_ages = [a for a in _initial_ages if 0 < a < 17]
+                if _underage_ages:
+                    print(f"ПРОПУСК: несовершеннолетняя ({_underage_ages}) в '{resp}'")
+                    await end_chat(page)
+                    continue
 
                 if is_age_question(resp):
                     log("  -> Ответ: age question detected, answering '19'")
@@ -896,6 +933,15 @@ async def main():
                         await human_type(page, "сколько лет")
                         chat_messages.append({"role": "own", "content": "сколько лет"})
                         count += 1
+                elif is_how_are_you:
+                    log("  -> Ответ: how are you, answering 'норм, ты как?'")
+                    await human_type(page, "норм, ты как?")
+                    chat_messages.append({"role": "own", "content": "норм, ты как?"})
+                    count += 1
+                    if not age_already_known:
+                        await human_type(page, "сколько лет")
+                        chat_messages.append({"role": "own", "content": "сколько лет"})
+                        count += 1
                 elif not age_already_known:
                     log("  -> Ответ: no pattern matched, asking 'сколько лет'")
                     await human_type(page, "сколько лет")
@@ -905,7 +951,7 @@ async def main():
                 # 7. Ждем ответ про возраст (таймаут 10 секунд) — если ещё не знаем
                 if not age_already_known:
                     log(f"  [Жду ответ на 'сколько лет']...")
-                    age_text, count, age_resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
+                    age_text, count, age_resp_time = await wait_for_partner_msg(page, count, chat_messages, timeout=30)
                     log(f"  [Ответ на возраст]: '{age_text}' (time={age_resp_time:.1f}s)")
 
                 # Если чат завершен во время ожидания
@@ -1038,12 +1084,25 @@ async def main():
                         is_from_q = any(p in tl_age for p in FROM_ASK_PATTERNS)
                         is_name_q = any(p in tl_age for p in NAME_ASK_PATTERNS)
                         is_nice = any(p in tl_age for p in NICE_TO_MEET_PATTERNS)
+                        is_how_are_you_q = any(p in tl_age for p in HOW_ARE_YOU_PATTERNS)
 
                         if is_from_q:
                             log(f"  -> Ответ на возраст: 'откуда', отвечаем 'Уже в гости собралась'")
                             await human_type(page, "Уже в гости собралась")
                             chat_messages.append({"role": "own", "content": "Уже в гости собралась"})
                             count += 1
+                            reply, count, _ = await wait_for_partner_msg(page, count, chat_messages, timeout=15)
+                            if reply is not None:
+                                if is_dismissive(reply):
+                                    print(f"ПРОПУСК: грубость в '{reply}'")
+                                    await end_chat(page)
+                                    continue
+                                reply_ages = [int(s) for s in re.findall(r'\d+', reply)]
+                                if any(a in target_ages for a in reply_ages):
+                                    print(f"ПОДХОДИТ ({reply_ages})!")
+                                    await enter_wait_mode(page, count, chat_messages, str(reply_ages[0]))
+                                    continue
+                            await asyncio.sleep(5)
                             await human_type(page, "сколько лет")
                             chat_messages.append({"role": "own", "content": "сколько лет"})
                             count += 1
@@ -1070,6 +1129,44 @@ async def main():
                             await human_type(page, "взаимно")
                             chat_messages.append({"role": "own", "content": "взаимно"})
                             count += 1
+                            reply, count, _ = await wait_for_partner_msg(page, count, chat_messages, timeout=15)
+                            if reply is not None:
+                                if is_dismissive(reply):
+                                    print(f"ПРОПУСК: грубость в '{reply}'")
+                                    await end_chat(page)
+                                    continue
+                                reply_ages = [int(s) for s in re.findall(r'\d+', reply)]
+                                if any(a in target_ages for a in reply_ages):
+                                    print(f"ПОДХОДИТ ({reply_ages})!")
+                                    await enter_wait_mode(page, count, chat_messages, str(reply_ages[0]))
+                                    continue
+                            await asyncio.sleep(5)
+                            await human_type(page, "сколько лет")
+                            chat_messages.append({"role": "own", "content": "сколько лет"})
+                            count += 1
+                            age_text2, count, age_resp_time2 = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
+                            if age_text2 is None:
+                                print("ПРОПУСК: нет ответа на повторный 'сколько лет' (таймаут/чат завершён)")
+                                continue
+                            ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
+                            is_target2 = any(a in target_ages for a in ages2)
+                        elif is_how_are_you_q:
+                            log(f"  -> Ответ на возраст: 'как дела', отвечаем 'норм, ты как?'")
+                            await human_type(page, "норм, ты как?")
+                            chat_messages.append({"role": "own", "content": "норм, ты как?"})
+                            count += 1
+                            reply, count, _ = await wait_for_partner_msg(page, count, chat_messages, timeout=15)
+                            if reply is not None:
+                                if is_dismissive(reply):
+                                    print(f"ПРОПУСК: грубость в '{reply}'")
+                                    await end_chat(page)
+                                    continue
+                                reply_ages = [int(s) for s in re.findall(r'\d+', reply)]
+                                if any(a in target_ages for a in reply_ages):
+                                    print(f"ПОДХОДИТ ({reply_ages})!")
+                                    await enter_wait_mode(page, count, chat_messages, str(reply_ages[0]))
+                                    continue
+                            await asyncio.sleep(5)
                             await human_type(page, "сколько лет")
                             chat_messages.append({"role": "own", "content": "сколько лет"})
                             count += 1
@@ -1096,32 +1193,10 @@ async def main():
                             
                             ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
                             is_target2 = any(a in target_ages for a in ages2)
-                        elif age_resp_time > 3:
-                            await human_type(page, "ну скажи сколько лет?")
-                            chat_messages.append({"role": "own", "content": "ну скажи сколько лет?"})
-                            count += 1
-
-                            age_text2, count, age_resp_time2 = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
-
-                            if age_text2 is None:
-                                print("ПРОПУСК: нет ответа на 'ну скажи сколько лет?' (таймаут/чат завершён)")
-                                continue
-
-                            ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
-                            is_target2 = any(a in target_ages for a in ages2)
-                        elif age_resp_time <= 3:
-                            await human_type(page, "ну скажи сколько лет?")
-                            chat_messages.append({"role": "own", "content": "ну скажи сколько лет?"})
-                            count += 1
-
-                            age_text2, count, age_resp_time2 = await wait_for_partner_msg(page, count, chat_messages, timeout=10)
-
-                            if age_text2 is None:
-                                print("ПРОПУСК: нет ответа на 'ну скажи сколько лет?' (таймаут/чат завершён)")
-                                continue
-
-                            ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
-                            is_target2 = any(a in target_ages for a in ages2)
+                        else:
+                            print(f"ПРОПУСК: собеседник не ответила на вопрос о возрасте")
+                            await end_chat(page)
+                            continue
 
                         if age_text2 and is_ukrainian(age_text2):
                             print(f"ПРОПУСК: украинский язык в '{age_text2}'")
