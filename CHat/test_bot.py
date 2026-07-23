@@ -183,6 +183,9 @@ assert_true("зови меня Лена", _partner_name_received([{"role": "othe
 assert_false("привет имя", _partner_name_received([{"role": "other", "content": "Привет"}]))
 assert_false("спасибо не имя", _partner_name_received([{"role": "other", "content": "Спасибо"}]))
 assert_false("ага не имя", _partner_name_received([{"role": "other", "content": "ага"}]))
+assert_true("имя с маленькой буквы", _partner_name_received([{"role": "other", "content": "катя"}]))
+assert_true("вика маленькими", _partner_name_received([{"role": "other", "content": "вика"}]))
+assert_true("аня маленькими", _partner_name_received([{"role": "other", "content": "аня"}]))
 
 # ===== check_filters =====
 print("\n=== check_filters ===")

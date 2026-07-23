@@ -443,7 +443,7 @@ def _partner_name_received(chat_messages):
         if is_self_introduction(content):
             return True
         words = content.split()
-        if len(words) == 1 and words[0][0:1].isupper() and words[0].isalpha():
+        if len(words) == 1 and words[0].isalpha():
             if words[0].lower() not in _GREETINGS and words[0].lower() not in _NOT_NAMES:
                 return True
     return False
@@ -966,8 +966,8 @@ async def stage_names(page, count, messages, state):
                 log(f"[Stage 2] Partner intro: '{resp}'")
             else:
                 words = resp.strip().split()
-                if (len(words) == 1 and words[0][0:1].isupper()
-                        and words[0].isalpha() and words[0].lower() not in _GREETINGS
+                if (len(words) == 1 and words[0].isalpha()
+                        and words[0].lower() not in _GREETINGS
                         and words[0].lower() not in _NOT_NAMES):
                     state.partner_name = resp
                     log(f"[Stage 2] Partner name: '{resp}'")
@@ -1003,8 +1003,8 @@ async def stage_names(page, count, messages, state):
         log(f"[Stage 2] Partner intro: '{resp}'")
     else:
         words = resp.strip().split()
-        if (len(words) == 1 and words[0][0:1].isupper()
-                and words[0].isalpha() and words[0].lower() not in _GREETINGS
+        if (len(words) == 1 and words[0].isalpha()
+                and words[0].lower() not in _GREETINGS
                 and words[0].lower() not in _NOT_NAMES):
             state.partner_name = resp
             log(f"[Stage 2] Partner name: '{resp}'")
@@ -1014,6 +1014,24 @@ async def stage_names(page, count, messages, state):
     followup, count, _ = await wait_for_partner_msg(page, count, messages, timeout=5)
     if followup is not None:
         log(f"[Stage 2] Follow-up after name: '{followup}'")
+        fu_lower = followup.lower()
+        if any(p in fu_lower for p in NICE_TO_MEET_PATTERNS):
+            await human_type(page, "взаимно")
+            messages.append({"role": "own", "content": "взаимно"})
+            count += 1
+        elif any(p in fu_lower for p in HOW_ARE_YOU_PATTERNS):
+            await human_type(page, "норм, ты как?")
+            messages.append({"role": "own", "content": "норм, ты как?"})
+            count += 1
+        elif any(p in fu_lower for p in WHAT_ARE_YOU_DOING_PATTERNS):
+            await human_type(page, "Знакомлюсь")
+            messages.append({"role": "own", "content": "Знакомлюсь"})
+            count += 1
+        elif any(p in fu_lower for p in AND_YOU_PATTERNS):
+            if not _already_sent_19(messages):
+                await human_type(page, "19")
+                messages.append({"role": "own", "content": "19"})
+                count += 1
 
     state.stage = 3
     return count
@@ -1158,7 +1176,6 @@ async def stage_free_chat(page, count, messages, state):
                     words_t = t.split()
                     is_single_name = (
                         len(words_t) == 1
-                        and words_t[0][0:1].isupper()
                         and words_t[0].isalpha()
                         and words_t[0].lower() not in _GREETINGS
                         and words_t[0].lower() not in _NOT_NAMES

@@ -82,7 +82,7 @@ for stage_fn in stages:
 
 ## Testing
 
-`CHat/test_bot.py` — 133 unit tests on pure logic (patterns, filters, helpers). Run:
+`CHat/test_bot.py` — 136 unit tests on pure logic (patterns, filters, helpers). Run:
 
 ```powershell
 cd CHat
