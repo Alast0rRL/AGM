@@ -139,7 +139,22 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
             except:
                 pass
             if not input_visible or new_chat_visible:
-                return None, last_count, 0
+                # Повторная проверка через 3 сек — поле могло быть временно скрыто
+                await asyncio.sleep(3)
+                input_field2 = await page.query_selector(INPUT_FIELD)
+                input_visible2 = False
+                try:
+                    input_visible2 = input_field2 and await input_field2.is_visible()
+                except:
+                    pass
+                new_chat_btn2 = await page.query_selector(NEW_CHAT_BUTTON)
+                new_chat_visible2 = False
+                try:
+                    new_chat_visible2 = new_chat_btn2 and await new_chat_btn2.is_visible()
+                except:
+                    pass
+                if not input_visible2 or new_chat_visible2:
+                    return None, last_count, 0
         
         current_msgs = await page.query_selector_all(MESSAGES)
         if len(current_msgs) > last_count:
