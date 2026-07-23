@@ -448,6 +448,7 @@ _NOT_NAMES = {
     "кстати", "вообще", "прям", "типа", "короче", "слушай", "кстати",
     "пожалуйста", "спасибо", "пожалуй", "извини", "прости", "чё", "чего",
     "ничего", "всё", "все", "окей", "ок", "йес", "нет", "да",
+    "нормас", "норма", "нормально", "нормально)",
 }
 
 def _partner_name_received(chat_messages):
@@ -576,16 +577,20 @@ async def stage_greeting(page, count, messages, state):
         await human_type(page, "взаимно")
         messages.append({"role": "own", "content": "взаимно"})
         count += 1
-        await human_type(page, "сколько лет")
-        messages.append({"role": "own", "content": "сколько лет"})
-        count += 1
+        already_asked_age = any("сколько лет" in m.get("content", "") for m in messages if m["role"] == "own")
+        if not age_already_known and not already_asked_age:
+            await human_type(page, "сколько лет")
+            messages.append({"role": "own", "content": "сколько лет"})
+            count += 1
     elif is_from_q:
         await human_type(page, "Уже в гости собралась")
         messages.append({"role": "own", "content": "Уже в гости собралась"})
         count += 1
-        await human_type(page, "сколько лет")
-        messages.append({"role": "own", "content": "сколько лет"})
-        count += 1
+        already_asked_age = any("сколько лет" in m.get("content", "") for m in messages if m["role"] == "own")
+        if not age_already_known and not already_asked_age:
+            await human_type(page, "сколько лет")
+            messages.append({"role": "own", "content": "сколько лет"})
+            count += 1
     elif is_and_you:
         if is_confirmation_question(resp):
             await human_type(page, "да")
