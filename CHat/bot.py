@@ -576,8 +576,13 @@ async def stage_greeting(page, count, messages, state):
             await human_type(page, "да")
             messages.append({"role": "own", "content": "да"})
         else:
-            await human_type(page, "Тож")
-            messages.append({"role": "own", "content": "Тож"})
+            if not said_19 and not _already_sent_19(messages):
+                await human_type(page, "19")
+                messages.append({"role": "own", "content": "19"})
+                said_19 = True
+            else:
+                await human_type(page, "Тож")
+                messages.append({"role": "own", "content": "Тож"})
         count += 1
         if not age_already_known:
             # Подождать 10 сек — может сама напишет возраст
