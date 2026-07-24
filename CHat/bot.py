@@ -733,6 +733,12 @@ async def stage_greeting(page, count, messages, state):
         age_text_has_and_you = any(p in age_text_lower for p in AND_YOU_PATTERNS)
         resp_has_and_you = any(p in resp_lower for p in AND_YOU_PATTERNS)
 
+        if age_text_has_and_you and not said_19 and not _already_sent_19(messages):
+            await human_type(page, "19")
+            messages.append({"role": "own", "content": "19"})
+            said_19 = True
+            count += 1
+
         if not resp_has_and_you and not age_text_has_and_you and is_age_question(age_text):
             await human_type(page, "тебе сколько?")
             messages.append({"role": "own", "content": "тебе сколько?"})
@@ -962,6 +968,8 @@ async def stage_names(page, count, messages, state):
         import time as _time
         _start = _time.time()
         _timeout = 20
+        _partner_chatting = False
+        _name_q_received = False
 
         while _time.time() - _start < _timeout:
             remaining = _timeout - (_time.time() - _start)
@@ -984,7 +992,10 @@ async def stage_names(page, count, messages, state):
                     messages.append({"role": "own", "content": "19"})
                     state.said_19 = True
                     count += 1
+                _start = _time.time()
                 continue
+
+            _partner_chatting = True
 
             if is_self_introduction(resp):
                 state.partner_name = resp
@@ -998,17 +1009,28 @@ async def stage_names(page, count, messages, state):
                     log(f"[Stage 2] Partner name: '{resp}'")
 
             is_name_q = any(p in resp.lower() for p in NAME_ASK_PATTERNS)
+            if is_name_q:
+                _name_q_received = True
             if is_name_q or state.partner_name:
                 break
 
-        if _partner_name_received(messages):
-            await human_type(page, "Максим")
-            messages.append({"role": "own", "content": "Максим"})
-        else:
+        if _name_q_received or state.partner_name or _partner_name_received(messages):
+            if _partner_name_received(messages):
+                await human_type(page, "Максим")
+                messages.append({"role": "own", "content": "Максим"})
+            else:
+                await human_type(page, "Максим, тебя?")
+                messages.append({"role": "own", "content": "Максим, тебя?"})
+            state.name_sent = True
+            count += 1
+        elif not _partner_chatting:
             await human_type(page, "Максим, тебя?")
             messages.append({"role": "own", "content": "Максим, тебя?"})
-        state.name_sent = True
-        count += 1
+            state.name_sent = True
+            count += 1
+        else:
+            log("[Stage 2] Partner chatting, skipping proactive name send")
+            state.name_sent = True
 
     resp, count, _ = await wait_for_partner_msg(page, count, messages, timeout=15)
 
@@ -1049,8 +1071,8 @@ async def stage_names(page, count, messages, state):
             messages.append({"role": "own", "content": "норм, ты как?"})
             count += 1
         elif any(p in fu_lower for p in WHAT_ARE_YOU_DOING_PATTERNS):
-            await human_type(page, "Знакомлюсь")
-            messages.append({"role": "own", "content": "Знакомлюсь"})
+            await human_type(page, "Бездельничаю")
+            messages.append({"role": "own", "content": "Бездельничаю"})
             count += 1
         elif any(p in fu_lower for p in AND_YOU_PATTERNS):
             if not _already_sent_19(messages):
@@ -1098,7 +1120,11 @@ async def stage_free_chat(page, count, messages, state):
                         await end_chat(page)
                         return True
                     tl = t.lower()
-                    is_name = any(p in tl for p in NAME_ASK_PATTERNS) or is_self_introduction(t)
+                    is_name = any(p in tl for p in NAME_ASK_PATTERNS) or is_self_introduction(t) or (
+                        len(t.split()) == 1 and t.split()[0].isalpha()
+                        and t.split()[0].lower() not in _GREETINGS
+                        and t.split()[0].lower() not in _NOT_NAMES
+                    )
                     is_from = any(p in tl for p in FROM_ASK_PATTERNS)
                     is_nice = any(p in tl for p in NICE_TO_MEET_PATTERNS)
                     is_age = is_age_question(t)
@@ -1128,9 +1154,9 @@ async def stage_free_chat(page, count, messages, state):
                         await human_type(page, "норм, ты как?")
                         messages.append({"role": "own", "content": "норм, ты как?"})
                     elif is_doing:
-                        log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Знакомлюсь'")
-                        await human_type(page, "Знакомлюсь")
-                        messages.append({"role": "own", "content": "Знакомлюсь"})
+                        log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
+                        await human_type(page, "Бездельничаю")
+                        messages.append({"role": "own", "content": "Бездельничаю"})
             lc = len(msgs)
         else:
             silence_sec += 1
@@ -1269,15 +1295,20 @@ async def stage_free_chat(page, count, messages, state):
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
-                        log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Знакомлюсь'")
-                        await human_type(page, "Знакомлюсь")
-                        messages.append({"role": "own", "content": "Знакомлюсь"})
+                        log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
+                        await human_type(page, "Бездельничаю")
+                        messages.append({"role": "own", "content": "Бездельничаю"})
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in HOW_ARE_YOU_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: how-are-you -> 'норм, ты как?'")
                         await human_type(page, "норм, ты как?")
                         messages.append({"role": "own", "content": "норм, ты как?"})
+                        lc = len(msgs)
+                        break
+                    elif name_sent and is_single_name:
+                        state.partner_name = t
+                        log(f"  [Stage 3] Partner name saved: '{t}'")
                         lc = len(msgs)
                         break
                     else:
