@@ -121,11 +121,13 @@ async def get_msg_role(page, msg_element):
 async def wait_for_partner_msg(page, last_count, all_messages: list = None, timeout: float = None):
     """Ждет нового сообщения от собеседника с опциональным таймаутом"""
     import time
+    if not await _chat_alive(page):
+        return None, last_count, 0
     start_time = time.time()
     
     while True:
         elapsed = time.time() - start_time
-        if elapsed > 5:
+        if elapsed > 2:
             input_field = await page.query_selector(INPUT_FIELD)
             input_visible = False
             try:
@@ -139,8 +141,8 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
             except:
                 pass
             if not input_visible or new_chat_visible:
-                # Повторная проверка через 3 сек — поле могло быть временно скрыто
-                await asyncio.sleep(3)
+                # Повторная проверка через 1 сек — поле могло быть временно скрыто
+                await asyncio.sleep(1)
                 input_field2 = await page.query_selector(INPUT_FIELD)
                 input_visible2 = False
                 try:
