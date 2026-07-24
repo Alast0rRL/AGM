@@ -90,36 +90,33 @@ def _set_tts_enabled(val: bool):
     global _tts_enabled
     _tts_enabled = val
 
-async def inject_tts_toggle(page):
-    """Инжектит плавающую панель включения/выключения озвучки в правом верхнем углу."""
-    if await page.evaluate("document.getElementById('tts-toggle-panel') !== null"):
-        return
+async def setup_tts_toggle(page):
+    """Настраивает плавающую панель TTS через init_script (переживает навигацию)."""
     global _tts_exposed
     if not _tts_exposed:
         await page.expose_function("_py_set_tts", _set_tts_enabled)
         _tts_exposed = True
-    await page.evaluate("""() => {
-        const panel = document.createElement('div');
-        panel.id = 'tts-toggle-panel';
-        panel.dataset.enabled = 'true';
-        panel.innerHTML = '<span id="tts-icon">🔊</span>';
-        Object.assign(panel.style, {
-            position:'fixed', top:'10px', right:'10px', zIndex:'99999',
-            background:'#222', color:'#fff', padding:'8px 12px',
-            borderRadius:'8px', cursor:'pointer', fontSize:'20px',
-            userSelect:'none', fontFamily:'Arial',
-            boxShadow:'0 2px 8px rgba(0,0,0,0.3)',
-            lineHeight:'1'
-        });
-        panel.onclick = () => {
-            const enabled = panel.dataset.enabled !== 'false';
-            const newVal = !enabled;
-            panel.dataset.enabled = newVal;
-            document.getElementById('tts-icon').textContent = newVal ? '🔊' : '🔇';
-            if (window._py_set_tts) window._py_set_tts(newVal);
-        };
-        document.body.appendChild(panel);
-    }""")
+    await page.add_init_script("""
+const ID = 'tts-toggle-panel';
+function inject() {
+    if (document.getElementById(ID)) return;
+    if (!document.body) return;
+    var p = document.createElement('div');
+    p.id = ID;
+    p.dataset.enabled = 'true';
+    p.innerHTML = '<span id="tts-icon">🔊</span>';
+    p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:20px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1';
+    p.onclick = function(){
+        var nv = p.dataset.enabled !== 'false' ? false : true;
+        p.dataset.enabled = nv;
+        document.getElementById('tts-icon').textContent = nv ? '🔊' : '🔇';
+        if (window._py_set_tts) window._py_set_tts(nv);
+    };
+    document.body.appendChild(p);
+}
+inject();
+new MutationObserver(inject).observe(document.documentElement, { childList: true, subtree: true });
+""")
 
 # Селекторы (настроены под текущую верстку Nekto.me)
 START_BUTTON = "#searchCompanyBtn"
@@ -1462,6 +1459,8 @@ async def main():
         pages = browser.pages
         page = pages[0] if pages else await browser.new_page()
 
+        await setup_tts_toggle(page)
+
         tts_thread = threading.Thread(target=_tts_worker, daemon=True)
         tts_thread.start()
 
@@ -1470,7 +1469,6 @@ async def main():
         while True:
             try:
                 count = await start_new_chat(page)
-                await inject_tts_toggle(page)
                 chat_messages = []
                 state = ChatState()
 
