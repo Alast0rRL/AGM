@@ -20,6 +20,7 @@ def log(msg):
 # --- TTS (озвучка сообщений) ---
 _tts_queue = queue.Queue()
 _tts_ready = False
+_tts_enabled = True
 _TTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
 _TTS_FEMALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-irina-medium.onnx")
 _TTS_MALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-ruslan-medium.onnx")
@@ -79,7 +80,42 @@ def _tts_worker():
         _tts_queue.task_done()
 
 async def speak(text, female=True):
+    global _tts_enabled
+    if not _tts_enabled:
+        return
     _tts_queue.put((text, female))
+
+def _set_tts_enabled(val: bool):
+    global _tts_enabled
+    _tts_enabled = val
+
+async def inject_tts_toggle(page):
+    """Инжектит плавающую панель включения/выключения озвучки в правом верхнем углу."""
+    if await page.evaluate("document.getElementById('tts-toggle-panel') !== null"):
+        return
+    await page.expose_function("_py_set_tts", _set_tts_enabled)
+    await page.evaluate("""() => {
+        const panel = document.createElement('div');
+        panel.id = 'tts-toggle-panel';
+        panel.dataset.enabled = 'true';
+        panel.innerHTML = '<span id="tts-icon">🔊</span>';
+        Object.assign(panel.style, {
+            position:'fixed', top:'10px', right:'10px', zIndex:'99999',
+            background:'#222', color:'#fff', padding:'8px 12px',
+            borderRadius:'8px', cursor:'pointer', fontSize:'20px',
+            userSelect:'none', fontFamily:'Arial',
+            boxShadow:'0 2px 8px rgba(0,0,0,0.3)',
+            lineHeight:'1'
+        });
+        panel.onclick = () => {
+            const enabled = panel.dataset.enabled !== 'false';
+            const newVal = !enabled;
+            panel.dataset.enabled = newVal;
+            document.getElementById('tts-icon').textContent = newVal ? '🔊' : '🔇';
+            if (window._py_set_tts) window._py_set_tts(newVal);
+        };
+        document.body.appendChild(panel);
+    }""")
 
 # Селекторы (настроены под текущую верстку Nekto.me)
 START_BUTTON = "#searchCompanyBtn"
@@ -1421,6 +1457,8 @@ async def main():
 
         pages = browser.pages
         page = pages[0] if pages else await browser.new_page()
+
+        await inject_tts_toggle(page)
 
         tts_thread = threading.Thread(target=_tts_worker, daemon=True)
         tts_thread.start()
