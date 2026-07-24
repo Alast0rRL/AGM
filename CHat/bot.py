@@ -21,6 +21,7 @@ def log(msg):
 _tts_queue = queue.Queue()
 _tts_ready = False
 _tts_enabled = True
+_tts_exposed = False
 _TTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
 _TTS_FEMALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-irina-medium.onnx")
 _TTS_MALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-ruslan-medium.onnx")
@@ -93,7 +94,10 @@ async def inject_tts_toggle(page):
     """Инжектит плавающую панель включения/выключения озвучки в правом верхнем углу."""
     if await page.evaluate("document.getElementById('tts-toggle-panel') !== null"):
         return
-    await page.expose_function("_py_set_tts", _set_tts_enabled)
+    global _tts_exposed
+    if not _tts_exposed:
+        await page.expose_function("_py_set_tts", _set_tts_enabled)
+        _tts_exposed = True
     await page.evaluate("""() => {
         const panel = document.createElement('div');
         panel.id = 'tts-toggle-panel';
@@ -1458,8 +1462,6 @@ async def main():
         pages = browser.pages
         page = pages[0] if pages else await browser.new_page()
 
-        await inject_tts_toggle(page)
-
         tts_thread = threading.Thread(target=_tts_worker, daemon=True)
         tts_thread.start()
 
@@ -1468,6 +1470,7 @@ async def main():
         while True:
             try:
                 count = await start_new_chat(page)
+                await inject_tts_toggle(page)
                 chat_messages = []
                 state = ChatState()
 
