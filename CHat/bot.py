@@ -121,8 +121,6 @@ async def get_msg_role(page, msg_element):
 async def wait_for_partner_msg(page, last_count, all_messages: list = None, timeout: float = None):
     """Ждет нового сообщения от собеседника с опциональным таймаутом"""
     import time
-    if not await _chat_alive(page):
-        return None, last_count, 0
     start_time = time.time()
     
     while True:
@@ -362,6 +360,14 @@ def is_self_introduction(text: str) -> bool:
                 has_digit = any(c.isdigit() for c in " ".join(rest_words))
                 if has_upper or has_digit:
                     return True
+
+    if len(t.split()) >= 2:
+        first_orig = orig_words[0]
+        first_lower = words[0]
+        if (first_orig[0].isupper() and first_lower.isalpha()
+                and first_lower not in _GREETINGS and first_lower not in _NOT_NAMES):
+            if any(c.isdigit() for c in " ".join(words[1:])):
+                return True
     return False
 
 FROM_ASK_PATTERNS = [
