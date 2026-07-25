@@ -37,11 +37,10 @@ for stage_fn in stages:
 | 3 | `stage_free_chat()` | Infinite loop: respond to questions, handle dismissive/ukrainian/muslim triggers |
 
 **Stage 2 flow**:
-1. Wait up to 20s for partner's first message after age is known
-2. If partner asks age or says "а тебе"/"тебе?" → answer "19", then wait for another message before name exchange
+1. Wait indefinitely for partner's message after age is known
+2. If partner asks age or says "а тебе"/"тебе?" → answer "19", then continue waiting
 3. If partner introduces themselves or asks name → send "Максим" or "Максим, тебя?" immediately
-4. If timeout → send "Максим, тебя?" proactively
-5. Then wait up to 15s for partner's name response
+4. Then wait up to 15s for partner's name response
 
 **`ChatState` dataclass** tracks conversation state between stages: `partner_name`, `partner_age`, `said_19`, `name_sent`, `stage`.
 

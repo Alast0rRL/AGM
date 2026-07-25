@@ -100,33 +100,48 @@ async def setup_tts_toggle(page):
 async def _inject_tts_panel(page):
     """Инжектит панель TTS в DOM + MutationObserver для авто-восстановления."""
     try:
-        await page.evaluate("""() => {
-            const ID = 'tts-toggle-panel';
-            if (document.getElementById(ID)) return;
-            function inject() {
-                if (document.getElementById(ID)) return;
-                if (!document.body) return;
-                var p = document.createElement('div');
-                p.id = ID;
-                p.dataset.enabled = 'true';
-                p.innerHTML = '<span id="tts-icon">🔊</span>';
-                p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:20px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1';
-                p.onclick = function(){
-                    var nv = p.dataset.enabled !== 'false' ? false : true;
-                    p.dataset.enabled = nv;
-                    document.getElementById('tts-icon').textContent = nv ? '🔊' : '🔇';
-                    if (window._py_set_tts) window._py_set_tts(nv);
-                };
-                document.body.appendChild(p);
-            }
-            inject();
-            if (!window._ttsObserver) {
-                window._ttsObserver = new MutationObserver(function(){ inject(); });
-                window._ttsObserver.observe(document.documentElement, { childList: true, subtree: true });
-            }
-        }""")
-    except:
-        pass
+        has = await page.evaluate("!!document.getElementById('tts-toggle-panel')")
+        if has:
+            return
+        body_ok = await page.evaluate("!!document.body")
+        log(f"[TTS toggle] inject: body={body_ok}")
+        if not body_ok:
+            return
+        await page.evaluate("""
+(function(){
+var ID = 'tts-toggle-panel';
+var ON = '&#x1F50A;';
+var OFF = '&#x1F507;';
+function makePanel(){
+    var el = document.getElementById(ID);
+    if (el) return el;
+    var p = document.createElement('div');
+    p.id = ID;
+    p.dataset.enabled = 'true';
+    p.innerHTML = '<span id="tts-icon">'+ON+'</span>';
+    p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:20px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1';
+    p.onclick = function(){
+        var nv = p.dataset.enabled !== 'false' ? false : true;
+        p.dataset.enabled = nv;
+        var icon = document.getElementById('tts-icon');
+        if (icon) icon.innerHTML = nv ? ON : OFF;
+        if (window._py_set_tts) window._py_set_tts(nv);
+    };
+    document.body.appendChild(p);
+    return p;
+}
+makePanel();
+if (!window._ttsObserver) {
+    window._ttsObserver = new MutationObserver(function(){
+        if (!document.getElementById(ID)) makePanel();
+    });
+    window._ttsObserver.observe(document.documentElement, { childList: true, subtree: true });
+}
+})();
+""")
+        log("[TTS toggle] injected OK")
+    except Exception as e:
+        log(f"[TTS toggle] inject FAIL: {e}")
 
 # Селекторы (настроены под текущую верстку Nekto.me)
 START_BUTTON = "#searchCompanyBtn"
@@ -207,22 +222,40 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
         if len(current_msgs) > last_count:
             for i in range(last_count, len(current_msgs)):
                 role = await get_msg_role(page, current_msgs[i])
-                if role != 'self':
-                    text = await current_msgs[i].inner_text()
-                    log(f"  [wait_for_partner] got: '{text}' (role={role})")
-                    print(f"Собеседник: {text}")
-                    await speak(text, female=True)
+                text = await current_msgs[i].inner_text()
+                if role == 'self':
                     if all_messages is not None:
-                        all_messages.append({"role": "other", "content": text})
-                    response_time = time.time() - start_time
-                    return text, i + 1, response_time
-            # Все новые сообщения — свои (ввёл пользователь вручную)
+                        all_messages.append({"role": "self", "content": text})
+                    last_count = i + 1
+                    continue
+                log(f"  [wait_for_partner] got: '{text}' (role={role})")
+                print(f"Собеседник: {text}")
+                await speak(text, female=True)
+                if all_messages is not None:
+                    all_messages.append({"role": "other", "content": text})
+                response_time = time.time() - start_time
+                return text, i + 1, response_time
             last_count = len(current_msgs)
         
         if timeout is not None and (time.time() - start_time) > timeout:
             return None, last_count, 0
         
         await asyncio.sleep(0.2)
+
+async def reset_for_new_chat(page):
+    """Приводит страницу в состояние готовности к новому чату."""
+    await asyncio.sleep(1)
+    try:
+        new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
+        if new_chat_btn and await new_chat_btn.is_visible():
+            return
+    except:
+        pass
+    try:
+        await page.goto("https://nekto.me/chat/#/", timeout=15000)
+    except:
+        pass
+    await asyncio.sleep(2)
 
 async def start_new_chat(page):
     """Начинает новый чат или продолжает активный"""
@@ -237,7 +270,10 @@ async def start_new_chat(page):
             btn_visible = await new_chat_btn.is_visible()
         if existing_input and await existing_input.is_visible() and not btn_visible:
             msgs = await page.query_selector_all(MESSAGES)
-            return len(msgs)
+            if not msgs:
+                return 0
+            # Есть сообщения — возможно залипло, форсируем новый чат
+            await reset_for_new_chat(page)
     except:
         pass
     
@@ -366,8 +402,8 @@ NAME_ASK_PATTERNS = [
     "твое имя", "твоё имя", "имя как",
     "а тебя", "представься",
     "как тебя", "а как тебя",
-    "имя", "как называть",
-    "тебя?", "а тебя?",
+    "имя?", "имя ?", "как называть",
+    "тебя?", "тебя ?", "а тебя?", "а тебя ?",
 ]
 
 
@@ -436,14 +472,18 @@ AND_YOU_PATTERNS = [
     "а ты?", "а ты а",
     "а тебе", "а те",
     "а вам", "а вас",
-    "тебе?", "тебя?", "вам?", "вас?",
-    "те?",
-    "тебе",
+    "тебе?", "тебе ?", "тебя?", "тебя ?",
+    "вам?", "вам ?", "вас?", "вас ?",
+    "те?", "те ?",
 ]
 
 WHAT_ARE_YOU_DOING_PATTERNS = [
     "что делаешь", "чем занят", "чем занимаешься",
     "что сейчас делаешь", "чем шумишь",
+]
+
+LOOKING_FOR_PATTERNS = [
+    "что ищешь", "кого ищешь",
 ]
 
 HOW_ARE_YOU_PATTERNS = [
@@ -460,6 +500,24 @@ COMPLIMENT_PATTERNS = [
     "прикольное имя", "милое имя", "стрange имя",
     "какое имя", "имя крутое", "имя красивое",
     "классное имя", "интересное имя",
+]
+
+RUSSIAN_CONFIRM_PATTERNS = [
+    "да", "ага",
+    "да, русская", "да русская",
+    "конечно", "да, конечно", "да конечно",
+]
+
+TG_CONTINUE_PATTERNS = [
+    "в тг", "в телеграм", "телеграм",
+    "тг", "тг?", "тг.",
+    "ссылк", "ссылку", "ссылкой",
+    "свой тг", "свой телеграм",
+    "напиши в тг", "напиши в телеграм",
+    "продолжить в тг", "продолжим в тг",
+    "перейдём в тг", "перейдем в тг",
+    "скинь тг", "скинь ссылк",
+    "дай тг", "дашь тг",
 ]
 
 def is_confirmation_question(text: str) -> bool:
@@ -486,7 +544,7 @@ def _name_already_sent(chat_messages):
 
 def _already_sent_19(chat_messages):
     for msg in chat_messages:
-        if msg.get("role") == "own" and msg.get("content", "").strip() == "19":
+        if msg.get("role") in ("own", "self") and msg.get("content", "").strip() == "19":
             return True
     return False
 
@@ -504,6 +562,7 @@ _NOT_NAMES = {
     "пожалуйста", "спасибо", "пожалуй", "извини", "прости", "чё", "чего",
     "ничего", "всё", "все", "окей", "ок", "йес", "нет", "да",
     "нормас", "норма", "нормально", "нормально)",
+    "ростов",
 }
 
 def _partner_name_received(chat_messages):
@@ -525,6 +584,7 @@ class ChatState:
     partner_age: str = None
     said_19: bool = False
     name_sent: bool = False
+    asked_russian: bool = False
     stage: int = 1
 
 def check_filters(text: str) -> str:
@@ -988,26 +1048,6 @@ async def stage_greeting(page, count, messages, state):
             return None
 
         else:
-            await asyncio.sleep(5)
-            age_text3, count, _ = await wait_for_partner_msg(page, count, messages, timeout=20)
-            if age_text3:
-                ages3 = [int(s) for s in re.findall(r'\d+', age_text3)]
-                if any(a in target_ages for a in ages3):
-                    state.partner_age = str([a for a in ages3 if a in target_ages][0])
-                    print(f"ПОДХОДИТ ({ages3})!")
-                    if is_self_introduction(age_text3):
-                        await human_type(page, "Максим 19")
-                        messages.append({"role": "own", "content": "Максим 19"})
-                        said_19 = True
-                        state.name_sent = True
-                        count += 1
-                    if not said_19 and any(p in age_text3.lower() for p in AND_YOU_PATTERNS):
-                        await human_type(page, "19")
-                        messages.append({"role": "own", "content": "19"})
-                        said_19 = True
-                        count += 1
-                    state.said_19 = said_19
-                    return count
             print("ПРОПУСК: собеседник не ответила на вопрос о возрасте")
             await end_chat(page)
             return None
@@ -1021,19 +1061,18 @@ async def stage_names(page, count, messages, state):
 
     if not state.name_sent:
         import time as _time
-        _start = _time.time()
-        _timeout = 20
-        _partner_chatting = False
-        _name_q_received = False
+        _deadline = _time.time() + 10
 
-        while _time.time() - _start < _timeout:
-            remaining = _timeout - (_time.time() - _start)
+        while _time.time() < _deadline:
+            remaining = _deadline - _time.time()
             if remaining <= 0:
                 break
-            resp, count, _ = await wait_for_partner_msg(page, count, messages, timeout=remaining)
+            resp, count, _ = await wait_for_partner_msg(page, count, messages, timeout=min(30, remaining))
 
             if resp is None:
-                break
+                if await _chat_alive(page):
+                    continue
+                return None
 
             f = check_filters(resp)
             if f:
@@ -1047,10 +1086,8 @@ async def stage_names(page, count, messages, state):
                     messages.append({"role": "own", "content": "19"})
                     state.said_19 = True
                     count += 1
-                _start = _time.time()
+                _deadline = _time.time() + 10
                 continue
-
-            _partner_chatting = True
 
             if is_self_introduction(resp):
                 state.partner_name = resp
@@ -1064,12 +1101,10 @@ async def stage_names(page, count, messages, state):
                     log(f"[Stage 2] Partner name: '{resp}'")
 
             is_name_q = any(p in resp.lower() for p in NAME_ASK_PATTERNS)
-            if is_name_q:
-                _name_q_received = True
             if is_name_q or state.partner_name:
                 break
 
-        if _name_q_received or state.partner_name or _partner_name_received(messages):
+        if state.partner_name or _partner_name_received(messages):
             if _partner_name_received(messages):
                 await human_type(page, "Максим")
                 messages.append({"role": "own", "content": "Максим"})
@@ -1078,14 +1113,18 @@ async def stage_names(page, count, messages, state):
                 messages.append({"role": "own", "content": "Максим, тебя?"})
             state.name_sent = True
             count += 1
-        elif not _partner_chatting:
-            await human_type(page, "Максим, тебя?")
-            messages.append({"role": "own", "content": "Максим, тебя?"})
-            state.name_sent = True
-            count += 1
         else:
-            log("[Stage 2] Partner chatting, skipping proactive name send")
-            state.name_sent = True
+            if state.said_19:
+                log("[Stage 2] Answered age, proactively asking name")
+                await human_type(page, "Максим, тебя?")
+                messages.append({"role": "own", "content": "Максим, тебя?"})
+                state.name_sent = True
+                count += 1
+            else:
+                log("[Stage 2] No name or age question within 10s, skipping to stage 3")
+                state.name_sent = True
+                state.stage = 3
+                return count
 
     resp, count, _ = await wait_for_partner_msg(page, count, messages, timeout=15)
 
@@ -1110,8 +1149,20 @@ async def stage_names(page, count, messages, state):
                 and words[0].lower() not in _NOT_NAMES):
             state.partner_name = resp
             log(f"[Stage 2] Partner name: '{resp}'")
+        elif (len(words) == 2 and words[0].lower() == "я"
+              and words[1].isalpha()
+              and words[1].lower() not in _GREETINGS
+              and words[1].lower() not in _NOT_NAMES):
+            state.partner_name = words[1]
+            log(f"[Stage 2] Partner name from 'я {words[1]}': '{words[1]}'")
         else:
             log(f"[Stage 2] Not a name: '{resp}', will handle in stage 3")
+
+    if state.partner_name and not state.asked_russian:
+        await human_type(page, "русская?")
+        messages.append({"role": "own", "content": "русская?"})
+        state.asked_russian = True
+        count += 1
 
     followup, count, _ = await wait_for_partner_msg(page, count, messages, timeout=5)
     if followup is not None:
@@ -1134,6 +1185,15 @@ async def stage_names(page, count, messages, state):
                 await human_type(page, "19")
                 messages.append({"role": "own", "content": "19"})
                 count += 1
+        elif any(p in fu_lower for p in FROM_ASK_PATTERNS):
+            await human_type(page, "Уже в гости собралась")
+            messages.append({"role": "own", "content": "Уже в гости собралась"})
+            count += 1
+        elif any(p in fu_lower for p in RUSSIAN_CONFIRM_PATTERNS):
+            await human_type(page, "ура")
+            messages.append({"role": "own", "content": "ура"})
+            state.asked_russian = False
+            count += 1
 
     state.stage = 3
     return count
@@ -1141,7 +1201,7 @@ async def stage_names(page, count, messages, state):
 async def stage_free_chat(page, count, messages, state):
     """Стадия 3: Свободное общение (бывший enter_wait_mode). Возвращает True когда чат завершён."""
     lc = count
-    name_asked = state.name_sent
+    name_asked = _name_already_sent(messages)
     from_asked = False
     nice_to_meet = False
 
@@ -1212,6 +1272,10 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
                         await human_type(page, "Бездельничаю")
                         messages.append({"role": "own", "content": "Бездельничаю"})
+                    elif any(p in tl for p in LOOKING_FOR_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: looking-for -> 'тебя конечно'")
+                        await human_type(page, "тебя конечно")
+                        messages.append({"role": "own", "content": "тебя конечно"})
             lc = len(msgs)
         else:
             silence_sec += 1
@@ -1355,6 +1419,12 @@ async def stage_free_chat(page, count, messages, state):
                         messages.append({"role": "own", "content": "Бездельничаю"})
                         lc = len(msgs)
                         break
+                    elif any(p in tl for p in LOOKING_FOR_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: looking-for -> 'тебя конечно'")
+                        await human_type(page, "тебя конечно")
+                        messages.append({"role": "own", "content": "тебя конечно"})
+                        lc = len(msgs)
+                        break
                     elif any(p in tl for p in HOW_ARE_YOU_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: how-are-you -> 'норм, ты как?'")
                         await human_type(page, "норм, ты как?")
@@ -1364,6 +1434,23 @@ async def stage_free_chat(page, count, messages, state):
                     elif name_sent and is_single_name:
                         state.partner_name = t
                         log(f"  [Stage 3] Partner name saved: '{t}'")
+                        if not state.asked_russian:
+                            await human_type(page, "русская?")
+                            messages.append({"role": "own", "content": "русская?"})
+                            state.asked_russian = True
+                        lc = len(msgs)
+                        break
+                    elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: russian-confirm -> 'ура'")
+                        await human_type(page, "ура")
+                        messages.append({"role": "own", "content": "ура"})
+                        state.asked_russian = False
+                        lc = len(msgs)
+                        break
+                    elif any(p in tl for p in TG_CONTINUE_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: tg-continue -> 'давай, скинь ссылку'")
+                        await human_type(page, "давай, скинь ссылку")
+                        messages.append({"role": "own", "content": "давай, скинь ссылку"})
                         lc = len(msgs)
                         break
                     else:
@@ -1398,6 +1485,11 @@ def is_muslim(text: str) -> bool:
     t = text.lower().strip()
     for p in MUSLIM_SUBSTRINGS:
         if p in t:
+            # "мусульман" требует самоидентификации (я мусульманка/мусульманин)
+            # Вопросы про мусульман не триггерят
+            if p in ("мусульман", "мусульмани") and "?" in t:
+                if not re.search(r'\bя\b', t):
+                    continue
             return True
     return False
 
@@ -1411,6 +1503,7 @@ DISMISSIVE_PATTERNS = [
     "сам дурак", "тупой", "идиот",
     "достал", "достала",
     "иди отсюда", "иди нах", "пошёл нах", "пошел нах",
+    "многа",
 ]
 
 UNDERAGE_PATTERNS = [
@@ -1418,9 +1511,9 @@ UNDERAGE_PATTERNS = [
     "не достиг совершеннолетия", "мне нет 18",
     "мне нет восемнадцати", "мне ещё 18",
     "мне еще 18", "мне не 18",
-    "мне 1[0-7]", "мне семнадцать", "мне шестнадцать",
+    "мне 1[0-7]", "мне шестнадцать",
     "мне пятнадцать", "мне четырнадцать",
-    "мне 10", "мне 11", "мне 12", "мне 13", "мне 14", "мне 15", "мне 16", "мне 17",
+    "мне 10", "мне 11", "мне 12", "мне 13", "мне 14", "мне 15", "мне 16",
 ]
 
 def is_dismissive(text: str) -> bool:
@@ -1440,7 +1533,7 @@ def is_underage(text: str) -> bool:
         if p in t:
             return True
     # Проверяем числа в начале текста (например "14 я маленькая")
-    leading = re.match(r'^(\d+)', t)
+    leading = re.match(r'^(\d{2,})', t)
     if leading:
         age = int(leading.group(1))
         if 0 < age < 17:

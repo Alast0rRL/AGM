@@ -13,7 +13,8 @@ from bot import (
     check_filters, ChatState,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
-    NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS,
+    NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
+    RUSSIAN_CONFIRM_PATTERNS, TG_CONTINUE_PATTERNS,
 )
 
 passed = 0
@@ -61,6 +62,7 @@ assert_false("те? не возраст а and_you", is_age_question("те?"))
 assert_true("самой", is_age_question("а самой?"))
 assert_true("самому", is_age_question("а самому?"))
 assert_false("а тебе 19 не возраст", is_age_question("а тебе 19?"))
+assert_false("тебе ? с пробелом не возраст", is_age_question("тебе ?"))
 
 # ===== is_self_introduction =====
 print("\n=== is_self_introduction ===")
@@ -108,6 +110,12 @@ assert_true("халаль", is_muslim("халаль"))
 assert_false("пустой", is_muslim(""))
 assert_false("None", is_muslim(None))
 assert_false("обычный текст", is_muslim("привет как дела"))
+# Вопросы о мусульманах не триггерят
+assert_false("вопрос о мусульманках", is_muslim("А что с мусульманками не так?"))
+assert_false("вопрос про мусульман", is_muslim("почему мусульмане так делают?"))
+# Самоидентификация с вопросом всё ещё триггерит
+assert_true("я мусульманка а ты", is_muslim("я мусульманка, а ты?"))
+assert_true("я мусульманин", is_muslim("я мусульманин"))
 
 # ===== is_dismissive =====
 print("\n=== is_dismissive ===")
@@ -128,11 +136,11 @@ print("\n=== is_underage ===")
 assert_true("мне 15", is_underage("мне 15"))
 assert_true("мне 12", is_underage("мне 12 лет"))
 assert_true("мне 16", is_underage("мне 16"))
-assert_true("мне 17", is_underage("мне 17"))
+assert_false("мне 17", is_underage("мне 17"))
 assert_true("мне нет 18", is_underage("мне нет 18"))
 assert_true("несовершеннолетняя", is_underage("я несовершеннолетняя"))
 assert_true("14 я маленькая", is_underage("14 я маленькая"))
-assert_true("мне семнадцать", is_underage("мне семнадцать"))
+assert_false("мне семнадцать", is_underage("мне семнадцать"))
 assert_true("мне шестнадцать", is_underage("мне шестнадцать"))
 assert_true("мне пятнадцать", is_underage("мне пятнадцать"))
 assert_false("пустой", is_underage(""))
@@ -190,6 +198,158 @@ assert_true("имя с маленькой буквы", _partner_name_received([{
 assert_true("вика маленькими", _partner_name_received([{"role": "other", "content": "вика"}]))
 assert_true("аня маленькими", _partner_name_received([{"role": "other", "content": "аня"}]))
 
+# ===== FROM_ASK_PATTERNS =====
+print("\n=== FROM_ASK_PATTERNS ===")
+def _from_ask(t):
+    return any(p in t.lower() for p in FROM_ASK_PATTERNS)
+assert_true("ты откуда", _from_ask("ты откуда?"))
+assert_true("откуда ты", _from_ask("откуда ты"))
+assert_true("где живешь", _from_ask("где ты живешь?"))
+assert_true("из какого города", _from_ask("из какого ты города?"))
+assert_true("с какого города", _from_ask("с какого города?"))
+assert_false("просто привет", _from_ask("привет"))
+assert_false("без темы", _from_ask("я люблю кофе"))
+
+# ===== NICE_TO_MEET_PATTERNS =====
+print("\n=== NICE_TO_MEET_PATTERNS ===")
+def _nice(t):
+    return any(p in t.lower() for p in NICE_TO_MEET_PATTERNS)
+assert_true("приятно познакомиться", _nice("приятно познакомиться"))
+assert_true("приятно коротко", _nice("приятно"))
+assert_true("очень приятно", _nice("очень приятно"))
+assert_true("рада знакомству", _nice("рада знакомству"))
+assert_true("рад знакомству", _nice("рад знакомству"))
+assert_true("приятно знакомиться", _nice("приятно знакомиться"))
+assert_true("познакомится опечатка", _nice("приятно познакомится"))
+assert_false("просто привет", _nice("привет"))
+# "приятно" — подстрока "неприятно", это известное ограничение
+assert_true("неприятно содержит приятно", _nice("это неприятно"))
+
+# ===== WHAT_ARE_YOU_DOING_PATTERNS =====
+print("\n=== WHAT_ARE_YOU_DOING_PATTERNS ===")
+def _doing(t):
+    return any(p in t.lower() for p in WHAT_ARE_YOU_DOING_PATTERNS)
+assert_true("что делаешь", _doing("что делаешь?"))
+assert_true("чем занят", _doing("чем занят?"))
+assert_true("чем занимаешься", _doing("чем занимаешься?"))
+assert_true("что сейчас делаешь", _doing("что сейчас делаешь?"))
+assert_true("чем шумишь", _doing("чем шумишь"))
+assert_false("просто привет", _doing("привет"))
+assert_false("прошедшее время", _doing("что делал вчера"))
+assert_false("обратный порядок", _doing("занят чем?"))
+
+# ===== HOW_ARE_YOU_PATTERNS =====
+print("\n=== HOW_ARE_YOU_PATTERNS ===")
+def _how(t):
+    return any(p in t.lower() for p in HOW_ARE_YOU_PATTERNS)
+assert_true("как дела", _how("как дела?"))
+assert_true("как твои дела", _how("как твои дела"))
+assert_true("как сам", _how("как сам?"))
+assert_true("как сама", _how("как сама?"))
+assert_true("как жизнь", _how("как жизнь?"))
+assert_true("что нового", _how("что нового?"))
+assert_true("как поживаешь", _how("как поживаешь?"))
+assert_true("как оно", _how("как оно"))
+assert_true("как там", _how("как там"))
+assert_false("просто привет", _how("привет"))
+assert_false("дело не дела", _how("дело в том"))
+
+# ===== COMPLIMENT_PATTERNS =====
+print("\n=== COMPLIMENT_PATTERNS ===")
+def _compliment(t):
+    return any(p in t.lower() for p in COMPLIMENT_PATTERNS)
+assert_true("красивое имя", _compliment("красивое имя"))
+assert_true("крутое имя", _compliment("крутое имя"))
+assert_true("хорошее имя", _compliment("хорошее имя"))
+assert_true("прикольное имя", _compliment("прикольное имя"))
+assert_true("милое имя", _compliment("милое имя"))
+assert_true("какое имя", _compliment("какое имя"))
+assert_true("имя крутое", _compliment("имя крутое"))
+assert_true("имя красивое", _compliment("имя красивое"))
+assert_true("классное имя", _compliment("классное имя"))
+assert_true("интересное имя", _compliment("интересное имя"))
+# стрange имя — так в оригинальном коде (опечатка)
+assert_true("стрange имя", _compliment("стрange имя"))
+assert_false("просто привет", _compliment("привет"))
+assert_false("без имени", _compliment("тебя зовут"))
+
+# ===== LOOKING_FOR_PATTERNS =====
+print("\n=== LOOKING_FOR_PATTERNS ===")
+def _looking(t):
+    return any(p in t.lower() for p in LOOKING_FOR_PATTERNS)
+assert_true("что ищешь", _looking("что ищешь?"))
+assert_true("что ищешь тут", _looking("что ищешь тут?"))
+assert_true("кого ищешь", _looking("кого ищешь?"))
+assert_false("просто привет", _looking("привет"))
+assert_false("без вопроса", _looking("ищу человека"))
+# "кого ты ищешь" не ловится — "кого ищешь" не подстрока "кого ты ищешь"
+assert_false("кого ты ищешь", _looking("кого ты ищешь?"))
+
+# ===== AND_YOU_PATTERNS (ложные срабатывания) =====
+print("\n=== AND_YOU_PATTERNS (ложные срабатывания) ===")
+def _and_you(t):
+    return any(p in t.lower() for p in AND_YOU_PATTERNS)
+# "тебе" без знака вопроса больше не в списке — не должно срабатывать
+assert_false("я тебе напишу", _and_you("Я тебе напишу"))
+assert_false("я тебя люблю", _and_you("я тебя люблю"))
+assert_false("тебе не стыдно", _and_you("тебе не стыдно"))
+# А эти должны — настоящие встречные вопросы
+assert_true("а тебе с вопросом", _and_you("а тебе?"))
+assert_true("а тебе 19", _and_you("а тебе 19"))
+assert_true("тебе? коротко", _and_you("тебе?"))
+assert_true("тебе ? с пробелом", _and_you("тебе ?"))
+assert_true("тебя ? с пробелом", _and_you("тебя ?"))
+assert_true("вам ? с пробелом", _and_you("вам ?"))
+assert_true("вас ? с пробелом", _and_you("вас ?"))
+assert_true("а ты", _and_you("а ты"))
+
+# ===== NAME_ASK_PATTERNS (ложные срабатывания) =====
+print("\n=== NAME_ASK_PATTERNS (ложные срабатывания) ===")
+def _name_ask(t):
+    return any(p in t.lower() for p in NAME_ASK_PATTERNS)
+# "имя" без знака вопроса больше не в списке — не должно срабатывать
+assert_false("красивое имя", _name_ask("красивое имя"))
+assert_false("у меня красивое имя", _name_ask("у меня красивое имя"))
+assert_false("просто имя", _name_ask("просто имя"))
+# А эти должны — настоящие вопросы про имя
+assert_true("как тебя зовут", _name_ask("как тебя зовут?"))
+assert_true("твое имя", _name_ask("твое имя"))
+assert_true("а тебя", _name_ask("а тебя?"))
+assert_true("имя? с вопросом", _name_ask("имя?"))
+assert_true("имя ? с пробелом", _name_ask("имя ?"))
+assert_true("тебя ? с пробелом", _name_ask("тебя ?"))
+assert_true("как имя? с вопросом", _name_ask("как имя?"))
+
+# ===== RUSSIAN_CONFIRM_PATTERNS =====
+print("\n=== RUSSIAN_CONFIRM_PATTERNS ===")
+def _rus_confirm(t):
+    return any(p in t.lower() for p in RUSSIAN_CONFIRM_PATTERNS)
+assert_true("да", _rus_confirm("да"))
+assert_true("ага", _rus_confirm("ага"))
+assert_false("русская без да", _rus_confirm("русская"))
+assert_true("да русская", _rus_confirm("да русская"))
+assert_true("да, русская", _rus_confirm("да, русская"))
+assert_true("конечно", _rus_confirm("конечно"))
+assert_true("да конечно", _rus_confirm("да конечно"))
+assert_true("да, конечно", _rus_confirm("да, конечно"))
+assert_false("нет", _rus_confirm("нет"))
+assert_false("не русская", _rus_confirm("не русская"))
+assert_false("привет", _rus_confirm("привет"))
+
+# ===== TG_CONTINUE_PATTERNS =====
+print("\n=== TG_CONTINUE_PATTERNS ===")
+def _tg(t):
+    return any(p in t.lower() for p in TG_CONTINUE_PATTERNS)
+assert_true("в тг", _tg("давай в тг"))
+assert_true("в телеграм", _tg("скинь в телеграм"))
+assert_true("продолжить в тг", _tg("хочешь продолжить в тг?"))
+assert_true("тг коротко", _tg("тг?"))
+assert_true("ссылку", _tg("скинь ссылку"))
+assert_true("свой тг", _tg("напиши свой тг"))
+assert_true("дай тг", _tg("дай тг"))
+assert_false("привет", _tg("привет"))
+assert_false("без темы", _tg("я люблю кофе"))
+
 # ===== check_filters =====
 print("\n=== check_filters ===")
 assert_eq("украинский", check_filters("привiт"), "украинский язык")
@@ -205,6 +365,59 @@ assert_false("'тебя' в длинном предложении", is_age_quest
 assert_false("'сколько' без тебя", is_age_question("сколько их было"))
 assert_true("сколько тебя", is_age_question("сколько тебя лет"))
 
+# Дополнительные граничные случаи для is_age_question
+assert_true("сколька тебе", is_age_question("сколька тебе?"))
+assert_true("сколко тебе", is_age_question("сколко тебе?"))
+assert_true("а тибе 19 через пробел", is_age_question("а тибе 19"))
+assert_true("а тибя 18", is_age_question("а тибя 18"))
+
+# Дополнительные граничные случаи для is_self_introduction
+assert_true("привет Вика", is_self_introduction("привет Вика"))
+assert_true("приветик я Маша", is_self_introduction("приветик я Маша"))
+assert_false("я не представилась", is_self_introduction("я очень рада"))
+assert_false("одно слово не имя", is_self_introduction("прикольно"))
+assert_false("я решила", is_self_introduction("я решила написать"))
+
+# Дополнительные граничные случаи для is_underage
+assert_true("мне 10", is_underage("мне 10"))
+assert_true("мне 11", is_underage("мне 11"))
+assert_true("мне 13", is_underage("мне 13"))
+assert_true("мне четырнадцать", is_underage("мне четырнадцать"))
+assert_false("17 лет с пробелом", is_underage("17 лет"))
+assert_false("17 я взрослая", is_underage("17 я взрослая"))
+assert_false("7 лучше не возраст", is_underage("7 лучше"))
+assert_true("10 лет спереди", is_underage("10 лет я маленькая"))
+
+# Дополнительные граничные случаи для is_dismissive
+assert_true("пошёл нах", is_dismissive("пошёл нах"))
+assert_true("закройся", is_dismissive("закройся"))
+assert_true("отстань", is_dismissive("отстань"))
+assert_true("надоела", is_dismissive("ты надоела"))
+assert_true("некогда", is_dismissive("мне некогда"))
+assert_true("занят", is_dismissive("я занят"))
+assert_true("нет времени", is_dismissive("у меня нет времени"))
+assert_true("иди нах", is_dismissive("иди нахуй"))
+assert_false("просто привет", is_dismissive("привет как дела"))
+
+# Дополнительные граничные случаи для _partner_name_received
+assert_true("Макс короткое", _partner_name_received([{"role": "other", "content": "Макс"}]))
+assert_false("своё сообщение Максим", _partner_name_received([{"role": "own", "content": "Я Максим"}]))
+assert_false("нормально не имя", _partner_name_received([{"role": "other", "content": "нормально"}]))
+assert_false("конечно не имя", _partner_name_received([{"role": "other", "content": "конечно"}]))
+assert_false("ок не имя", _partner_name_received([{"role": "other", "content": "ок"}]))
+assert_false("ростов не имя", _partner_name_received([{"role": "other", "content": "Ростов"}]))
+assert_false("я катя не самопрезентация", _partner_name_received([{"role": "other", "content": "Я катя"}]))
+
+# Дополнительные граничные случаи для _already_sent_19
+assert_true("роль own 19", _already_sent_19([{"role": "own", "content": "19"}]))
+assert_true("роль self 19", _already_sent_19([{"role": "self", "content": "19"}]))
+
+# Дополнительные граничные случаи для check_filters — порядок фильтров
+assert_eq("украинский первее грубости",
+    check_filters("привiт молчи"), "украинский язык")
+assert_eq("украинский первее возраста",
+    check_filters("мне 15 и привiт"), "украинский язык")
+
 # ===== ChatState =====
 print("\n=== ChatState ===")
 state = ChatState()
@@ -212,6 +425,7 @@ assert_eq("default partner_name", state.partner_name, None)
 assert_eq("default partner_age", state.partner_age, None)
 assert_eq("default said_19", state.said_19, False)
 assert_eq("default name_sent", state.name_sent, False)
+assert_eq("default asked_russian", state.asked_russian, False)
 assert_eq("default stage", state.stage, 1)
 
 # ===== Резюме =====
