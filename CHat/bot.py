@@ -1378,12 +1378,6 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: and-you+есть -> 'нет'")
                         and_you_answered = True
                         await send_once(page, "нет", messages, state, role="own")
-                    elif not and_you_answered and (any(p in tl for p in AND_YOU_PATTERNS) or tl.strip() in _SHORT_AND_YOU):
-                        log(f"  [Stage 3] TRIGGER: and-you -> 'Тож'")
-                        and_you_answered = True
-                        await send_once(page, "Тож", messages, state, role="own")
-                        lc = len(msgs)
-                        break
                     elif any(p in tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
                         await send_once(page, "Бездельничаю", messages, state, role="own")
