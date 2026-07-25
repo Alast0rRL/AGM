@@ -210,6 +210,18 @@ assert_true("с какого города", _from_ask("с какого горо�
 assert_false("просто привет", _from_ask("привет"))
 assert_false("без темы", _from_ask("я люблю кофе"))
 
+# откуда + знаешь exclusion (not a location question)
+def _from_ask_excluded(t):
+    tl = t.lower()
+    return any(p in tl for p in FROM_ASK_PATTERNS) and not ("откуда" in tl and "знаешь" in tl)
+assert_true("откуда ты", _from_ask_excluded("откуда ты?"))
+assert_true("ты откуда", _from_ask_excluded("ты откуда?"))
+assert_false("откуда знаешь", _from_ask_excluded("да откуда ты знаешь"))
+assert_false("откуда это знаешь", _from_ask_excluded("откуда ты это знаешь?"))
+assert_false("а откуда знаешь", _from_ask_excluded("а откуда ты знаешь?"))
+assert_true("знаешь без откуда", _from_ask_excluded("где ты живешь?"))
+assert_true("откуда без знаешь", _from_ask_excluded("откуда вы?"))
+
 # ===== NICE_TO_MEET_PATTERNS =====
 print("\n=== NICE_TO_MEET_PATTERNS ===")
 def _nice(t):
