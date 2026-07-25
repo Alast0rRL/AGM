@@ -180,6 +180,13 @@ async def get_msg_role(page, msg_element):
         return 'unknown';
     }""")
 
+async def hover_msg(page, element):
+    try:
+        await element.hover()
+        await asyncio.sleep(0.05)
+    except:
+        pass
+
 async def wait_for_partner_msg(page, last_count, all_messages: list = None, timeout: float = None):
     """Ждет нового сообщения от собеседника с опциональным таймаутом"""
     import time
@@ -220,6 +227,7 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
         
         current_msgs = await page.query_selector_all(MESSAGES)
         if len(current_msgs) > last_count:
+            await hover_msg(page, current_msgs[-1])
             for i in range(last_count, len(current_msgs)):
                 role = await get_msg_role(page, current_msgs[i])
                 text = await current_msgs[i].inner_text()
@@ -1196,6 +1204,7 @@ async def stage_free_chat(page, count, messages, state):
             return True
         msgs = await page.query_selector_all(MESSAGES)
         if len(msgs) > lc:
+            await hover_msg(page, msgs[-1])
             silence_sec = 0
             for i in range(lc, len(msgs)):
                 t = await msgs[i].inner_text()
@@ -1288,6 +1297,7 @@ async def stage_free_chat(page, count, messages, state):
 
         msgs = await page.query_selector_all(MESSAGES)
         if len(msgs) > lc:
+            await hover_msg(page, msgs[-1])
             for i in range(lc, len(msgs)):
                 t = await msgs[i].inner_text()
                 r = await get_msg_role(page, msgs[i])

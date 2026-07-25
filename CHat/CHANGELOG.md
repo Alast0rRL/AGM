@@ -11,6 +11,9 @@
   - `AND_YOU_PATTERNS` / `NAME_ASK_PATTERNS` — ложные срабатывания после фикса паттернов
   - Дополнительные граничные случаи для `is_age_question`, `is_self_introduction`, `is_underage`, `is_dismissive`, `_partner_name_received`, `_already_sent_19`, `check_filters`
 
+### Added
+- **`hover_msg()`**: новый хелпер наводит мышь на элемент (через `element.hover()`). Вызывается для последнего сообщения (`current_msgs[-1]`) при появлении новых сообщений — в `wait_for_partner_msg()`, Stage 3 Phase 1 и Stage 3 Phase 2. Нужно для некто.ме: без наведения мыши текст может быть нечитаем.
+
 ### Fixed
 - **`FROM_ASK_PATTERNS`**: добавлено исключение «откуда»+«знаешь». Фраза «Да откуда ты знаешь» (How do you know?) больше не триггерит ответ «Уже в гости собралась». Если в сообщении есть и «откуда», и «знаешь» — это не вопрос про место жительства. (6 мест в `bot.py`: stage_greeting, stage_names ×2, stage_free_chat ×2 + follow-up.)
 - **`AND_YOU_PATTERNS`**: убран standalone `"тебе"` (без знака вопроса). «Я тебе напишу» больше не ловится как встречный вопрос. `"а тебе"`, `"тебе?"` и другие варианты сохранены.
