@@ -882,6 +882,7 @@ async def stage_greeting(page, count, messages, state):
         is_nice2 = any(p in tl for p in NICE_TO_MEET_PATTERNS)
         is_how_q2 = any(p in tl for p in HOW_ARE_YOU_PATTERNS)
         is_and_you_q2 = any(p in tl for p in AND_YOU_PATTERNS)
+        is_age_q2 = is_age_question(age_text)
 
         if is_from_q2:
             if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
@@ -1022,6 +1023,26 @@ async def stage_greeting(page, count, messages, state):
                     state.said_19 = said_19
                     return count
                 # Не年龄 — тогда спросить
+            if await send_once(page, "тебе сколько?", messages, state, role="own"):
+                count += 1
+            age_text2, count, _ = await wait_for_partner_msg(page, count, messages, timeout=10)
+            if age_text2 is None:
+                print("ПРОПУСК: нет ответа на 'тебе сколько?'")
+                return None
+            ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
+            if any(a in target_ages for a in ages2):
+                state.partner_age = str([a for a in ages2 if a in target_ages][0])
+                print(f"ПОДХОДИТ ({ages2})!")
+                state.said_19 = said_19
+                return count
+            await end_chat(page)
+            return None
+
+        elif is_age_q2:
+            if not said_19:
+                if await send_once(page, "19", messages, state, role="own"):
+                    said_19 = True
+                    count += 1
             if await send_once(page, "тебе сколько?", messages, state, role="own"):
                 count += 1
             age_text2, count, _ = await wait_for_partner_msg(page, count, messages, timeout=10)
