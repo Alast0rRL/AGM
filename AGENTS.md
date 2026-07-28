@@ -81,7 +81,7 @@ for stage_fn in stages:
 
 ## Testing
 
-`CHat/test_bot.py` — 136 unit tests on pure logic (patterns, filters, helpers). Run:
+`CHat/test_bot.py` — 323 unit tests on pure logic (patterns, filters, helpers). Run:
 
 ```powershell
 cd CHat
@@ -94,6 +94,6 @@ $env:PYTHONIOENCODING='utf-8'; python test_bot.py
 
 1. **Git commit before changes** — always commit current working state before editing
 2. **Targeted changes only** — make exactly what's requested, don't touch working parts
-3. **Run tests after changes** — `python test_bot.py`, all 133 must pass
+3. **Run tests after changes** — `python test_bot.py`, all 289 must pass
 4. **Changelog** — record changes in `CHat/CHANGELOG.md`
 5. **Don't rewrite** — edit existing code, don't rewrite functions from scratch
