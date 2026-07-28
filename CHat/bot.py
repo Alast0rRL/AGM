@@ -15,7 +15,8 @@ DEBUG = True
 
 def log(msg):
     if DEBUG:
-        print(f"  [DEBUG] {msg}", flush=True)
+        ts = datetime.now().strftime("%H:%M:%S")
+        print(f"  [{ts}] [DEBUG] {msg}", flush=True)
 
 # --- TTS (озвучка сообщений) ---
 _tts_queue = queue.Queue()
@@ -412,6 +413,9 @@ NAME_ASK_PATTERNS = [
     "как тебя", "а как тебя",
     "имя?", "имя ?", "как называть",
     "тебя?", "тебя ?", "а тебя?", "а тебя ?",
+    "как вас зовут", "вас зовут",
+    "как вас", "а как вас",
+    "вас?", "вас ?", "а вас?", "а вас ?",
 ]
 
 
@@ -517,6 +521,14 @@ RUSSIAN_CONFIRM_PATTERNS = [
     "да", "ага",
     "да, русская", "да русская",
     "конечно", "да, конечно", "да конечно",
+]
+
+TELL_ABOUT_PATTERNS = [
+    "расскажи о себе", "рассказывай", "расписывай",
+    "расскажи про себя", "расскажи что делаешь",
+    "что ты делаешь", "чем занимаешься",
+    "увлекаешься", "чем увлекаешься",
+    "расскажи", "интересно",
 ]
 
 TG_CONTINUE_PATTERNS = [
@@ -754,6 +766,11 @@ async def stage_greeting(page, count, messages, state):
 
     if age_already_known:
         state.partner_age = str([a for a in initial_ages if a in target_ages][0])
+        if not said_19 and not _already_sent_19(messages):
+            if any(p in resp_lower for p in ["тебе", "тебя", "вас"]):
+                if await send_once(page, "19", messages, state, role="own"):
+                    said_19 = True
+                    count += 1
         state.said_19 = said_19
         if is_self_intro or is_name_q:
             state.name_sent = True
@@ -784,6 +801,7 @@ async def stage_greeting(page, count, messages, state):
         else:
             if await send_once(page, "Максим, тебя?", messages, state, role="own"):
                 count += 1
+        state.name_sent = True
 
         name_resp, count, _ = await wait_for_partner_msg(page, count, messages, timeout=10)
         if name_resp is None:
@@ -812,6 +830,10 @@ async def stage_greeting(page, count, messages, state):
         name_resp_ages = [int(s) for s in re.findall(r'\d+', name_resp)]
         if any(a in target_ages for a in name_resp_ages):
             state.partner_age = str([a for a in name_resp_ages if a in target_ages][0])
+            if any(p in name_resp.lower() for p in AND_YOU_PATTERNS) and not said_19 and not _already_sent_19(messages):
+                if await send_once(page, "19", messages, state, role="own"):
+                    said_19 = True
+                    count += 1
             print(f"ПОДХОДИТ ({name_resp_ages})!")
             state.said_19 = said_19
             return count
@@ -1059,6 +1081,19 @@ async def stage_greeting(page, count, messages, state):
             return None
 
         else:
+            log(f"  [Stage 1] Irrelevant response, re-asking age once")
+            if await send_once(page, "сколько лет", messages, state, role="own"):
+                count += 1
+            age_text2, count, _ = await wait_for_partner_msg(page, count, messages, timeout=15)
+            if age_text2 is None:
+                print("ПРОПУСК: нет ответа на повторный вопрос о возрасте")
+                return None
+            ages2 = [int(s) for s in re.findall(r'\d+', age_text2)]
+            if any(a in target_ages for a in ages2):
+                state.partner_age = str([a for a in ages2 if a in target_ages][0])
+                print(f"ПОДХОДИТ ({ages2})!")
+                state.said_19 = said_19
+                return count
             print("ПРОПУСК: собеседник не ответила на вопрос о возрасте")
             await end_chat(page)
             return None
@@ -1116,6 +1151,28 @@ async def stage_names(page, count, messages, state):
             if is_name_q or state.partner_name:
                 break
 
+            _tl = resp.lower()
+            if any(p in _tl for p in FROM_ASK_PATTERNS) and not ("откуда" in _tl and "знаешь" in _tl):
+                if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+                    count += 1
+                _deadline = _time.time() + 10
+                continue
+            elif any(p in _tl for p in NICE_TO_MEET_PATTERNS):
+                if await send_once(page, "взаимно", messages, state, role="own"):
+                    count += 1
+                _deadline = _time.time() + 10
+                continue
+            elif any(p in _tl for p in HOW_ARE_YOU_PATTERNS):
+                if await send_once(page, "норм, ты как?", messages, state, role="own"):
+                    count += 1
+                _deadline = _time.time() + 10
+                continue
+            elif any(p in _tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
+                if await send_once(page, "Бездельничаю", messages, state, role="own"):
+                    count += 1
+                _deadline = _time.time() + 10
+                continue
+
         if state.partner_name or _partner_name_received(messages):
             if _partner_name_received(messages):
                 if await send_once(page, "Максим", messages, state, role="own"):
@@ -1127,10 +1184,14 @@ async def stage_names(page, count, messages, state):
                     count += 1
         else:
             if state.said_19:
-                log("[Stage 2] Answered age, proactively asking name")
-                if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+                if not _name_already_sent(messages):
+                    log("[Stage 2] Answered age, proactively asking name")
+                    if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+                        state.name_sent = True
+                        count += 1
+                else:
+                    log("[Stage 2] Name already sent (manual), skipping")
                     state.name_sent = True
-                    count += 1
             else:
                 log("[Stage 2] No name or age question within 10s, skipping to stage 3")
                 state.name_sent = True
@@ -1166,8 +1227,26 @@ async def stage_names(page, count, messages, state):
               and words[1].lower() not in _NOT_NAMES):
             state.partner_name = words[1]
             log(f"[Stage 2] Partner name from 'я {words[1]}': '{words[1]}'")
+        elif (words[0].rstrip(",.").istitle()
+              and words[0].rstrip(",.").isalpha()
+              and words[0].rstrip(",.").lower() not in _GREETINGS
+              and words[0].rstrip(",.").lower() not in _NOT_NAMES):
+            state.partner_name = words[0].rstrip(",.")
+            log(f"[Stage 2] Partner name from first word: '{state.partner_name}'")
         else:
             log(f"[Stage 2] Not a name: '{resp}', will handle in stage 3")
+
+    if state.partner_name:
+        _rl = resp.lower()
+        if any(p in _rl for p in NICE_TO_MEET_PATTERNS):
+            if await send_once(page, "взаимно", messages, state, role="own"):
+                count += 1
+        elif any(p in _rl for p in HOW_ARE_YOU_PATTERNS):
+            if await send_once(page, "норм, ты как?", messages, state, role="own"):
+                count += 1
+        elif any(p in _rl for p in FROM_ASK_PATTERNS) and not ("откуда" in _rl and "знаешь" in _rl):
+            if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+                count += 1
 
     if state.partner_name and not state.asked_russian:
         if await send_once(page, "русская?", messages, state, role="own"):
@@ -1282,7 +1361,7 @@ async def stage_free_chat(page, count, messages, state):
             lc = len(msgs)
         else:
             silence_sec += 1
-            if silence_sec >= 7 and not _already_sent_19(messages):
+            if silence_sec >= 7 and not _already_sent_19(messages) and not state.age_validated:
                 log(f"  [Stage 3] TRIGGER: silence 7s -> '19'")
                 await send_once(page, "19", messages, state, role="own")
                 lc = len(msgs)
@@ -1348,9 +1427,6 @@ async def stage_free_chat(page, count, messages, state):
                         and words_t[0].lower() not in _GREETINGS
                         and words_t[0].lower() not in _NOT_NAMES
                     )
-                    if name_sent and not is_question and not is_single_name:
-                        lc = len(msgs)
-                        continue
                     if not name_asked and any(p in tl for p in NAME_ASK_PATTERNS) and not _name_already_sent(messages):
                         name_asked = True
                         if _partner_name_received(messages):
@@ -1431,6 +1507,11 @@ async def stage_free_chat(page, count, messages, state):
                     elif any(p in tl for p in TG_CONTINUE_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: tg-continue -> 'давай, скинь ссылку'")
                         await send_once(page, "давай, скинь ссылку", messages, state, role="own")
+                        lc = len(msgs)
+                        break
+                    elif any(p in tl for p in TELL_ABOUT_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: tell-about -> 'работу ищу, а ты?'")
+                        await send_once(page, "работу ищу, а ты?", messages, state, role="own")
                         lc = len(msgs)
                         break
                     else:
@@ -1559,7 +1640,6 @@ async def main():
                 for stage_fn in stages:
                     result = await stage_fn(page, count, chat_messages, state)
                     if result is None:
-                        await end_chat(page)
                         break
                     count = result
 
