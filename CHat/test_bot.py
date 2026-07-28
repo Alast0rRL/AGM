@@ -15,6 +15,7 @@ from bot import (
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
     RUSSIAN_CONFIRM_PATTERNS, TG_CONTINUE_PATTERNS,
+    TELL_ABOUT_PATTERNS,
 )
 
 passed = 0
@@ -336,6 +337,15 @@ assert_true("имя? с вопросом", _name_ask("имя?"))
 assert_true("имя ? с пробелом", _name_ask("имя ?"))
 assert_true("тебя ? с пробелом", _name_ask("тебя ?"))
 assert_true("как имя? с вопросом", _name_ask("как имя?"))
+assert_true("как вас зовут", _name_ask("как вас зовут?"))
+assert_true("вас зовут", _name_ask("вас зовут?"))
+assert_true("как вас кратко", _name_ask("как вас?"))
+assert_true("а как вас", _name_ask("а как вас?"))
+assert_true("вас? с вопросом", _name_ask("вас?"))
+assert_true("вас ? с пробелом", _name_ask("вас ?"))
+assert_true("а вас?", _name_ask("а вас?"))
+assert_true("а вас ?", _name_ask("а вас ?"))
+assert_false("вас это не касается", _name_ask("вас это не касается"))
 
 # ===== RUSSIAN_CONFIRM_PATTERNS =====
 print("\n=== RUSSIAN_CONFIRM_PATTERNS ===")
@@ -366,6 +376,24 @@ assert_true("свой тг", _tg("напиши свой тг"))
 assert_true("дай тг", _tg("дай тг"))
 assert_false("привет", _tg("привет"))
 assert_false("без темы", _tg("я люблю кофе"))
+
+# ===== TELL_ABOUT_PATTERNS =====
+print("\n=== TELL_ABOUT_PATTERNS ===")
+def _tell_about(t):
+    return any(p in t.lower() for p in TELL_ABOUT_PATTERNS)
+assert_true("расписывай", _tell_about("расписывай"))
+assert_true("расписывай с воскл", _tell_about("Расписывай!"))
+assert_true("расскажи о себе", _tell_about("расскажи о себе"))
+assert_true("рассказывай", _tell_about("рассказывай"))
+assert_true("мне интересно", _tell_about("мне интересно"))
+assert_true("мне интересно предложение", _tell_about("Мне интересно"))
+assert_true("чем занимаешься", _tell_about("чем занимаешься?"))
+assert_true("что ты делаешь", _tell_about("что ты делаешь"))
+assert_true("увлекаешься", _tell_about("чем увлекаешься?"))
+assert_true("расскажи что делаешь", _tell_about("расскажи что делаешь"))
+assert_true("расскажи про себя", _tell_about("расскажи про себя"))
+assert_false("привет", _tell_about("привет"))
+assert_false("просто текст", _tell_about("я люблю кофе"))
 
 # ===== check_filters =====
 print("\n=== check_filters ===")
