@@ -10,6 +10,7 @@ from bot import (
     is_age_question, is_self_introduction, is_ukrainian, is_muslim,
     is_dismissive, is_underage, is_confirmation_question,
     _name_already_sent, _already_sent_19, _partner_name_received,
+    _extract_name_first_word,
     check_filters, ChatState,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
@@ -452,6 +453,21 @@ assert_false("конечно не имя", _partner_name_received([{"role": "oth
 assert_false("ок не имя", _partner_name_received([{"role": "other", "content": "ок"}]))
 assert_false("ростов не имя", _partner_name_received([{"role": "other", "content": "Ростов"}]))
 assert_false("я катя не самопрезентация", _partner_name_received([{"role": "other", "content": "Я катя"}]))
+
+# ===== _extract_name_first_word =====
+print("\n=== _extract_name_first_word ===")
+assert_eq("лена с запятой", _extract_name_first_word("Лена, приятно познакомиться"), "Лена")
+assert_eq("лена с точкой", _extract_name_first_word("Лена. приятно"), "Лена")
+assert_eq("просто имя", _extract_name_first_word("Лена"), "Лена")
+assert_eq("имя с маленькой", _extract_name_first_word("лена"), None)
+assert_eq("пустой", _extract_name_first_word(""), None)
+assert_eq("None", _extract_name_first_word(None), None)
+assert_eq("приветствие", _extract_name_first_word("Привет, как дела"), None)
+assert_eq("служебное", _extract_name_first_word("Круто, согласен"), None)
+assert_eq("не имя", _extract_name_first_word("Понятно"), None)
+assert_eq("имя в середине", _extract_name_first_word("Очень Лена"), None)
+assert_eq("цифры", _extract_name_first_word("19 лет"), None)
+assert_eq("первое слово не имя", _extract_name_first_word("Красивая девушка"), None)
 
 # Дополнительные граничные случаи для _already_sent_19
 assert_true("роль own 19", _already_sent_19([{"role": "own", "content": "19"}]))

@@ -601,6 +601,23 @@ def _partner_name_received(chat_messages):
                 return True
     return False
 
+def _extract_name_first_word(resp: str) -> str | None:
+    """Извлекает имя из первого слова с заглавной (например 'Лена, приятно познакомиться' -> 'Лена')."""
+    if not resp:
+        return None
+    words = resp.strip().split()
+    if not words:
+        return None
+    first_raw = words[0]
+    first = first_raw.rstrip(",.")
+    if not first_raw.endswith(",") and not first_raw.endswith(".") and len(words) > 1:
+        return None
+    if (first.istitle() and first.isalpha()
+            and first.lower() not in _GREETINGS
+            and first.lower() not in _NOT_NAMES):
+        return first
+    return None
+
 @dataclass
 class ChatState:
     partner_name: str = None
@@ -1227,11 +1244,8 @@ async def stage_names(page, count, messages, state):
               and words[1].lower() not in _NOT_NAMES):
             state.partner_name = words[1]
             log(f"[Stage 2] Partner name from 'я {words[1]}': '{words[1]}'")
-        elif (words[0].rstrip(",.").istitle()
-              and words[0].rstrip(",.").isalpha()
-              and words[0].rstrip(",.").lower() not in _GREETINGS
-              and words[0].rstrip(",.").lower() not in _NOT_NAMES):
-            state.partner_name = words[0].rstrip(",.")
+        elif _extracted := _extract_name_first_word(resp):
+            state.partner_name = _extracted
             log(f"[Stage 2] Partner name from first word: '{state.partner_name}'")
         else:
             log(f"[Stage 2] Not a name: '{resp}', will handle in stage 3")
