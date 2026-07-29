@@ -350,6 +350,9 @@ assert_true("вас ? с пробелом", _name_ask("вас ?"))
 assert_true("а вас?", _name_ask("а вас?"))
 assert_true("а вас ?", _name_ask("а вас ?"))
 assert_false("вас это не касается", _name_ask("вас это не касается"))
+assert_true("как зовут тебя", _name_ask("как зовут тебя?"))
+assert_true("зовут тебя", _name_ask("зовут тебя?"))
+assert_false("меня зовут аня", _name_ask("меня зовут аня"))
 
 # ===== RUSSIAN_CONFIRM_PATTERNS =====
 print("\n=== RUSSIAN_CONFIRM_PATTERNS ===")
