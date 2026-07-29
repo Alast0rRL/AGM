@@ -13,13 +13,14 @@ from bot import (
     is_dismissive, is_underage, is_confirmation_question,
     _name_already_sent, _already_sent_19, _partner_name_received,
     _extract_name_first_word,
+    _levenshtein, _is_female_name,
     check_filters, ChatState, _can_send, save_chat_log,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
     RUSSIAN_CONFIRM_PATTERNS, RUSSIAN_NOT_RUSSIAN_PATTERNS, RUSSIAN_DENY_PATTERNS,
     ZOVUT_PATTERNS, TG_CONTINUE_PATTERNS,
-    _SHORT_AND_YOU, _GREETINGS, _NOT_NAMES,
+    _SHORT_AND_YOU, _GREETINGS, _NOT_NAMES, FEMALE_NAMES,
 )
 
 passed = 0
@@ -177,6 +178,7 @@ assert_true("имя в контенте", _name_already_sent([{"role": "own", "c
 print("\n=== _already_sent_19 ===")
 assert_true("19 отправлено", _already_sent_19([{"role": "own", "content": "19"}]))
 assert_true("19 с пробелами", _already_sent_19([{"role": "own", "content": " 19 "}]))
+assert_true("Максим 19", _already_sent_19([{"role": "own", "content": "Максим 19"}]))
 assert_false("нет 19", _already_sent_19([{"role": "own", "content": "привет"}]))
 assert_false("19 от другого", _already_sent_19([{"role": "other", "content": "19"}]))
 assert_false("пустой список", _already_sent_19([]))
@@ -473,7 +475,7 @@ assert_true("иди нах", is_dismissive("иди нахуй"))
 assert_false("просто привет", is_dismissive("привет как дела"))
 
 # Дополнительные граничные случаи для _partner_name_received
-assert_true("Макс короткое", _partner_name_received([{"role": "other", "content": "Макс"}]))
+assert_false("Макс короткое мужское", _partner_name_received([{"role": "other", "content": "Макс"}]))
 assert_false("своё сообщение Максим", _partner_name_received([{"role": "own", "content": "Я Максим"}]))
 assert_false("нормально не имя", _partner_name_received([{"role": "other", "content": "нормально"}]))
 assert_false("конечно не имя", _partner_name_received([{"role": "other", "content": "конечно"}]))
@@ -529,6 +531,26 @@ assert_false("'а те' не в сете", "а те" in _SHORT_AND_YOU)
 assert_true("'тебе' в сете", "тебе" in _SHORT_AND_YOU)
 assert_false("'ите' не в сете", "ите" in _SHORT_AND_YOU)
 
+# ===== age_text + _SHORT_AND_YOU (last-word check) =====
+print("\n=== age_text + _SHORT_AND_YOU ===")
+def _age_text_and_you(t):
+    tl = t.lower().strip()
+    if any(p in tl for p in AND_YOU_PATTERNS):
+        return True
+    words = tl.split()
+    if words and words[-1] in _SHORT_AND_YOU:
+        return True
+    return False
+assert_true("18, тебе (short)", _age_text_and_you("18, тебе"))
+assert_true("18 тебе (short)", _age_text_and_you("18 тебе"))
+assert_true("голое тебе", _age_text_and_you("тебе"))
+assert_true("а тебе (patterns)", _age_text_and_you("а тебе"))
+assert_true("тебе? (patterns)", _age_text_and_you("тебе?"))
+assert_true("18, а тебе (patterns)", _age_text_and_you("18, а тебе"))
+assert_false("просто 18", _age_text_and_you("18"))
+assert_false("привет", _age_text_and_you("привет"))
+assert_false("пустая", _age_text_and_you(""))
+
 # ===== _GREETINGS =====
 print("\n=== _GREETINGS ===")
 for g in ["привет", "приветик", "здравствуй", "здравствуйте",
@@ -553,6 +575,111 @@ assert_false("'Анна' не в _NOT_NAMES", "анна" in _NOT_NAMES)
 assert_false("'Мария' не в _NOT_NAMES", "мария" in _NOT_NAMES)
 assert_false("'Катя' не в _NOT_NAMES", "катя" in _NOT_NAMES)
 assert_false("'Света' не в _NOT_NAMES", "света" in _NOT_NAMES)
+
+# ===== FEMALE_NAMES =====
+print("\n=== FEMALE_NAMES ===")
+def _is_female_name(t):
+    return t.lower() in FEMALE_NAMES
+assert_true("аня", _is_female_name("аня"))
+assert_true("Аня", _is_female_name("Аня"))
+assert_true("катя", _is_female_name("катя"))
+assert_true("софья", _is_female_name("софья"))
+assert_true("вика", _is_female_name("вика"))
+assert_true("даша", _is_female_name("даша"))
+assert_true("лена", _is_female_name("лена"))
+assert_true("настя", _is_female_name("настя"))
+assert_true("маша", _is_female_name("маша"))
+assert_true("юля", _is_female_name("юля"))
+assert_true("света", _is_female_name("света"))
+assert_true("анна", _is_female_name("анна"))
+assert_true("ольга", _is_female_name("ольга"))
+assert_true("алина", _is_female_name("алина"))
+assert_true("полина", _is_female_name("полина"))
+assert_true("ира", _is_female_name("ира"))
+assert_true("яна", _is_female_name("яна"))
+assert_true("таня", _is_female_name("таня"))
+assert_true("эвелина", _is_female_name("эвелина"))
+assert_true("алиса", _is_female_name("алиса"))
+assert_true("ева", _is_female_name("ева"))
+assert_true("вера", _is_female_name("вера"))
+assert_true("злата", _is_female_name("злата"))
+assert_true("милена", _is_female_name("милена"))
+assert_true("сабина", _is_female_name("сабина"))
+assert_true("эмилия", _is_female_name("эмилия"))
+assert_true("снежана", _is_female_name("снежана"))
+assert_true("стефания", _is_female_name("стефания"))
+assert_true("камилла", _is_female_name("камилла"))
+assert_true("аделина", _is_female_name("аделина"))
+assert_true("лада", _is_female_name("лада"))
+assert_true("лиана", _is_female_name("лиана"))
+assert_true("руслана", _is_female_name("руслана"))
+assert_true("ника", _is_female_name("ника"))
+assert_true("нелли", _is_female_name("нелли"))
+assert_true("элеонора", _is_female_name("элеонора"))
+assert_true("ангела", _is_female_name("ангела"))
+assert_true("аида", _is_female_name("аида"))
+assert_true("айгуль", _is_female_name("айгуль"))
+assert_true("альбина", _is_female_name("альбина"))
+assert_true("альфия", _is_female_name("альфия"))
+assert_true("амина", _is_female_name("амина"))
+assert_true("амира", _is_female_name("амира"))
+assert_true("аниса", _is_female_name("аниса"))
+assert_true("асия", _is_female_name("асия"))
+assert_true("венера", _is_female_name("венера"))
+assert_true("даяна", _is_female_name("даяна"))
+assert_true("диляра", _is_female_name("диляра"))
+assert_true("джамиля", _is_female_name("джамиля"))
+assert_true("есения", _is_female_name("есения"))
+assert_true("зарема", _is_female_name("зарема"))
+assert_true("зарина", _is_female_name("зарина"))
+assert_true("зухра", _is_female_name("зухра"))
+assert_true("ильмира", _is_female_name("ильмира"))
+assert_true("ильнара", _is_female_name("ильнара"))
+assert_true("кадрия", _is_female_name("кадрия"))
+assert_true("камила", _is_female_name("камила"))
+assert_true("лейла", _is_female_name("лейла"))
+assert_true("лейсан", _is_female_name("лейсан"))
+assert_true("марьям", _is_female_name("марьям"))
+assert_true("наргиза", _is_female_name("наргиза"))
+assert_true("роза", _is_female_name("роза"))
+assert_true("руфина", _is_female_name("руфина"))
+assert_true("саида", _is_female_name("саида"))
+assert_true("самира", _is_female_name("самира"))
+assert_true("сания", _is_female_name("сания"))
+assert_true("сафия", _is_female_name("сафия"))
+assert_true("фарида", _is_female_name("фарида"))
+assert_true("хадижа", _is_female_name("хадижа"))
+assert_true("эльмира", _is_female_name("эльмира"))
+assert_true("эмина", _is_female_name("эмина"))
+assert_true("ясмина", _is_female_name("ясмина"))
+assert_true("белла", _is_female_name("белла"))
+assert_true("мирослава", _is_female_name("мирослава"))
+assert_false("дв", _is_female_name("дв"))
+assert_false("да", _is_female_name("да"))
+assert_false("нет", _is_female_name("нет"))
+assert_false("привет", _is_female_name("привет"))
+assert_false("норм", _is_female_name("норм"))
+assert_false("круто", _is_female_name("круто"))
+assert_false("ок", _is_female_name("ок"))
+assert_false("ростов", _is_female_name("ростов"))
+assert_true("сафия fuzzy софия", _is_female_name("сафия"))
+assert_true("сафия exact", _is_female_name("сафия"))
+assert_true("лена direct", _is_female_name("лена"))
+assert_true("сабина direct", _is_female_name("сабина"))
+assert_false("мара dist2 мария", _is_female_name("мара"))
+assert_false("ростов не имя", _is_female_name("ростов"))
+
+# ===== _levenshtein =====
+print("\n=== _levenshtein ===")
+assert_eq("same string", _levenshtein("лена", "лена"), 0)
+assert_eq("one sub", _levenshtein("лена", "лина"), 1)
+assert_eq("one del", _levenshtein("лена", "лен"), 1)
+assert_eq("one ins", _levenshtein("лен", "лена"), 1)
+assert_eq("сафия vs софия", _levenshtein("сафия", "софия"), 1)
+assert_eq("ана vs анна", _levenshtein("ана", "анна"), 1)
+assert_eq("аня vs анна", _levenshtein("аня", "анна"), 2)
+assert_eq("мара vs мария", _levenshtein("мара", "мария"), 2)
+assert_eq("сабина vs софия", _levenshtein("сабина", "софия"), 2)
 
 # ===== is_age_question: недостающие паттерны =====
 print("\n=== is_age_question (недостающие паттерны) ===")
@@ -604,7 +731,10 @@ assert_false("Анна-Мария одно слово с дефисом", _partn
 assert_false("я катя с маленькой", _partner_name_received([{"role": "other", "content": "я катя"}]))
 assert_false("я маша с маленькой", _partner_name_received([{"role": "other", "content": "я маша"}]))
 assert_false("я алина с маленькой", _partner_name_received([{"role": "other", "content": "я алина"}]))
-
+assert_false("дв не имя", _partner_name_received([{"role": "other", "content": "Дв"}]))
+assert_true("софья имя", _partner_name_received([{"role": "other", "content": "Софья"}]))
+assert_true("эвелина имя", _partner_name_received([{"role": "other", "content": "Эвелина"}]))
+ 
 # ===== check_filters: все комбинации приоритетов =====
 print("\n=== check_filters (приоритеты) ===")
 assert_eq("укр + мус", check_filters("привiт ассалам"), "украинский язык")

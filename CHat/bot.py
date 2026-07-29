@@ -462,7 +462,8 @@ def is_self_introduction(text: str) -> bool:
         first_orig = orig_words[0]
         first_lower = words[0]
         if (first_orig[0].isupper() and first_lower.isalpha()
-                and first_lower not in _GREETINGS and first_lower not in _NOT_NAMES):
+                and _is_female_name(first_orig)
+                and first_lower not in _GREETINGS):
             if any(c.isdigit() for c in " ".join(words[1:])):
                 return True
     return False
@@ -573,9 +574,172 @@ def _name_already_sent(chat_messages):
 
 def _already_sent_19(chat_messages):
     for msg in chat_messages:
-        if msg.get("role") in ("own", "self") and msg.get("content", "").strip() == "19":
+        if msg.get("role") in ("own", "self") and "19" in msg.get("content", ""):
             return True
     return False
+
+def _levenshtein(s1: str, s2: str) -> int:
+    if abs(len(s1) - len(s2)) > 1:
+        return 2
+    if len(s1) < len(s2):
+        s1, s2 = s2, s1
+    prev = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        cur = [i + 1]
+        for j, c2 in enumerate(s2):
+            cur.append(min(cur[j] + 1, prev[j + 1] + 1, prev[j] + (0 if c1 == c2 else 1)))
+        if min(cur) > 1:
+            return 2
+        prev = cur
+    return prev[-1]
+
+def _is_female_name(name: str) -> bool:
+    n = name.lower().strip()
+    if n in FEMALE_NAMES:
+        return True
+    for known in FEMALE_NAMES:
+        if abs(len(n) - len(known)) <= 1 and _levenshtein(n, known) <= 1:
+            return True
+    return False
+
+FEMALE_NAMES = {
+    "аделина",
+    "азалия",
+    "аида",
+    "айгуль",
+    "айна",
+    "александра", "саша",
+    "алина", "алиса", "алёна", "алена",
+    "альбина",
+    "альфия",
+    "амина",
+    "амира",
+    "анастасия", "настя", "настюша",
+    "ангела", "ангелина", "анжела",
+    "аниса",
+    "анна", "аня", "анютка", "анюта",
+    "асия",
+    "валентина",
+    "валерия", "лера",
+    "варвара", "варя",
+    "василиса",
+    "белла",
+    "венера",
+    "вера",
+    "вероника",
+    "вита",
+    "виталина",
+    "владислава", "влада",
+    "виктория", "вика",
+    "галина", "галя",
+    "гузель",
+    "дана",
+    "дарина",
+    "даяна",
+    "дарья", "даша", "дашенька",
+    "диана",
+    "диляра",
+    "джамиля",
+    "евгения", "женя",
+    "ева",
+    "есения",
+    "екатерина", "катя", "катерина", "катюша",
+    "елена", "лена",
+    "елизавета", "лиза",
+    "жанна",
+    "заира",
+    "залида",
+    "зарема",
+    "зарина",
+    "злата",
+    "ильмира",
+    "ильнара",
+    "зухра",
+    "зоя",
+    "инга",
+    "инесса",
+    "инна",
+    "ирина", "ира",
+    "кадрия",
+    "камила",
+    "камилла",
+    "карина",
+    "кира",
+    "кристина",
+    "ксения", "ксюша",
+    "лейла",
+    "лейсан",
+    "лада",
+    "лариса",
+    "лиана",
+    "лидия",
+    "лилия", "лиля",
+    "любовь", "люба",
+    "людмила", "люда",
+    "мавлюда",
+    "мадина",
+    "майя",
+    "малика",
+    "марьям",
+    "маргарита", "рита",
+    "марина",
+    "мария", "маша", "машенька",
+    "милана",
+    "милена",
+    "мирослава",
+    "муслима",
+    "надежда", "надя",
+    "наиля",
+    "наталия", "наталья",
+    "наташа",
+    "наргиза",
+    "нелли",
+    "ника",
+    "нина",
+    "оксана",
+    "олеся",
+    "ольга", "оля",
+    "полина",
+    "раиса",
+    "регина",
+    "роза",
+    "рузана",
+    "руслана",
+    "руфина",
+    "сабина",
+    "сагида",
+    "сажида",
+    "саида",
+    "самира",
+    "сания",
+    "сафия",
+    "светлана", "света",
+    "сирина",
+    "снежана",
+    "софия", "софья", "софа", "соня",
+    "стефания",
+    "таисия",
+    "тамара",
+    "татьяна", "таня",
+    "ульяна",
+    "фаина",
+    "фарида",
+    "фатима",
+    "хадижа",
+    "халида",
+    "эвелина",
+    "элеонора",
+    "элина", "элла",
+    "эльвира",
+    "эльмира",
+    "эльнара",
+    "эмилия",
+    "эмина",
+    "юлия", "юля",
+    "юлиана",
+    "яна",
+    "ясмина",
+}
 
 _GREETINGS = {
     "привет", "приветик", "здравствуй", "здравствуйте",
@@ -603,8 +767,8 @@ def _partner_name_received(chat_messages):
         if is_self_introduction(content):
             return True
         words = content.split()
-        if len(words) == 1 and words[0].isalpha():
-            if words[0].lower() not in _GREETINGS and words[0].lower() not in _NOT_NAMES:
+        if len(words) == 1 and words[0].isalpha() and len(words[0]) >= 3:
+            if _is_female_name(words[0]):
                 return True
     return False
 
@@ -620,8 +784,8 @@ def _extract_name_first_word(resp: str) -> str | None:
     if not first_raw.endswith(",") and not first_raw.endswith(".") and len(words) > 1:
         return None
     if (first.istitle() and first.isalpha()
-            and first.lower() not in _GREETINGS
-            and first.lower() not in _NOT_NAMES):
+            and _is_female_name(first)
+            and first.lower() not in _GREETINGS):
         return first
     return None
 
@@ -905,6 +1069,10 @@ async def stage_greeting(page, count, messages, state):
                 count += 1
 
         age_text_has_and_you = any(p in age_text_lower for p in AND_YOU_PATTERNS)
+        if not age_text_has_and_you:
+            atw = age_text_lower.strip().split()
+            if atw and atw[-1] in _SHORT_AND_YOU:
+                age_text_has_and_you = True
         resp_has_and_you = any(p in resp_lower for p in AND_YOU_PATTERNS)
 
         if age_text_has_and_you and not said_19 and not _already_sent_19(messages):
@@ -1192,9 +1360,8 @@ async def stage_names(page, count, messages, state):
                 log(f"[Stage 2] Partner intro: '{resp}'")
             else:
                 words = resp.strip().split()
-                if (len(words) == 1 and words[0].isalpha()
-                        and words[0].lower() not in _GREETINGS
-                        and words[0].lower() not in _NOT_NAMES):
+                if (len(words) == 1 and words[0].isalpha() and len(words[0]) >= 3
+                        and _is_female_name(words[0])):
                     state.partner_name = resp
                     log(f"[Stage 2] Partner name: '{resp}'")
 
@@ -1271,15 +1438,13 @@ async def stage_names(page, count, messages, state):
         log(f"[Stage 2] Partner intro: '{resp}'")
     else:
         words = resp.strip().split()
-        if (len(words) == 1 and words[0].isalpha()
-                and words[0].lower() not in _GREETINGS
-                and words[0].lower() not in _NOT_NAMES):
+        if (len(words) == 1 and words[0].isalpha() and len(words[0]) >= 3
+                and _is_female_name(words[0])):
             state.partner_name = resp
             log(f"[Stage 2] Partner name: '{resp}'")
         elif (len(words) == 2 and words[0].lower() == "я"
               and words[1].isalpha()
-              and words[1].lower() not in _GREETINGS
-              and words[1].lower() not in _NOT_NAMES):
+              and _is_female_name(words[1])):
             state.partner_name = words[1]
             log(f"[Stage 2] Partner name from 'я {words[1]}': '{words[1]}'")
         elif _extracted := _extract_name_first_word(resp):
@@ -1376,9 +1541,8 @@ async def stage_free_chat(page, count, messages, state):
                         return True
                     tl = t.lower()
                     is_name = any(p in tl for p in NAME_ASK_PATTERNS) or is_self_introduction(t) or (
-                        len(t.split()) == 1 and t.split()[0].isalpha()
-                        and t.split()[0].lower() not in _GREETINGS
-                        and t.split()[0].lower() not in _NOT_NAMES
+                        len(t.split()) == 1 and t.split()[0].isalpha() and len(t.split()[0]) >= 3
+                        and _is_female_name(t.split()[0])
                     )
                     is_from = any(p in tl for p in FROM_ASK_PATTERNS) and not ("откуда" in tl and "знаешь" in tl)
                     is_nice = any(p in tl for p in NICE_TO_MEET_PATTERNS)
@@ -1493,9 +1657,8 @@ async def stage_free_chat(page, count, messages, state):
                     words_t = t.split()
                     is_single_name = (
                         len(words_t) == 1
-                        and words_t[0].isalpha()
-                        and words_t[0].lower() not in _GREETINGS
-                        and words_t[0].lower() not in _NOT_NAMES
+                        and words_t[0].isalpha() and len(words_t[0]) >= 3
+                        and _is_female_name(words_t[0])
                     )
                     if not name_asked and any(p in tl for p in NAME_ASK_PATTERNS) and not _name_already_sent(messages):
                         name_asked = True
