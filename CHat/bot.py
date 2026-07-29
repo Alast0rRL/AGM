@@ -1158,7 +1158,22 @@ async def stage_names(page, count, messages, state):
                 await end_chat(page)
                 return None
 
-            if is_age_question(resp) or any(p in resp.lower() for p in AND_YOU_PATTERNS) or resp.strip().lower() in _SHORT_AND_YOU:
+            if is_age_question(resp):
+                if not state.said_19:
+                    if await send_once(page, "19", messages, state, role="own"):
+                        state.said_19 = True
+                        count += 1
+                _deadline = _time.time() + 10
+                continue
+
+            _tl = resp.lower()
+            if any(p in _tl for p in FROM_ASK_PATTERNS) and not ("откуда" in _tl and "знаешь" in _tl):
+                if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+                    count += 1
+                _deadline = _time.time() + 10
+                continue
+
+            if any(p in _tl for p in AND_YOU_PATTERNS) or _tl.strip() in _SHORT_AND_YOU:
                 if not state.said_19:
                     if await send_once(page, "19", messages, state, role="own"):
                         state.said_19 = True
@@ -1177,25 +1192,19 @@ async def stage_names(page, count, messages, state):
                     state.partner_name = resp
                     log(f"[Stage 2] Partner name: '{resp}'")
 
-            is_zovut = any(p in resp.lower() for p in ZOVUT_PATTERNS)
+            is_zovut = any(p in _tl for p in ZOVUT_PATTERNS)
             if is_zovut:
                 if await send_once(page, "по имени", messages, state, role="own"):
                     count += 1
                 _deadline = _time.time() + 10
                 continue
-            is_name_q = any(p in resp.lower() for p in NAME_ASK_PATTERNS)
+            is_name_q = any(p in _tl for p in NAME_ASK_PATTERNS)
             if is_name_q:
                 name_asked_by_partner = True
             if is_name_q or state.partner_name:
                 break
 
-            _tl = resp.lower()
-            if any(p in _tl for p in FROM_ASK_PATTERNS) and not ("откуда" in _tl and "знаешь" in _tl):
-                if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
-                    count += 1
-                _deadline = _time.time() + 10
-                continue
-            elif any(p in _tl for p in NICE_TO_MEET_PATTERNS):
+            if any(p in _tl for p in NICE_TO_MEET_PATTERNS):
                 if await send_once(page, "взаимно", messages, state, role="own"):
                     count += 1
                 _deadline = _time.time() + 10
