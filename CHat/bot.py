@@ -489,7 +489,7 @@ AND_YOU_PATTERNS = [
     "те?", "те ?",
 ]
 
-_SHORT_AND_YOU = {"те", "теб", "и те"}
+_SHORT_AND_YOU = {"те", "теб", "и те", "тебе"}
 
 WHAT_ARE_YOU_DOING_PATTERNS = [
     "что делаешь", "чем занят", "чем занимаешься",
@@ -521,14 +521,6 @@ RUSSIAN_CONFIRM_PATTERNS = [
     "да", "ага",
     "да, русская", "да русская",
     "конечно", "да, конечно", "да конечно",
-]
-
-TELL_ABOUT_PATTERNS = [
-    "расскажи о себе", "рассказывай", "расписывай",
-    "расскажи про себя", "расскажи что делаешь",
-    "что ты делаешь", "чем занимаешься",
-    "увлекаешься", "чем увлекаешься",
-    "расскажи", "интересно",
 ]
 
 TG_CONTINUE_PATTERNS = [
@@ -586,6 +578,7 @@ _NOT_NAMES = {
     "ничего", "всё", "все", "окей", "ок", "йес", "нет", "да",
     "нормас", "норма", "нормально", "нормально)",
      "ростов", "те", "ааа", "аааа", "ааааа", "хммм", "ммм", "угу", "аа", "уу",
+    "тебе", "лет",
 }
 
 def _partner_name_received(chat_messages):
@@ -629,8 +622,13 @@ class ChatState:
     age_validated: bool = False
     _sent: set = field(default_factory=set)
 
+def _can_send(text: str, sent_set: set) -> bool:
+    """Проверяет, можно ли отправить сообщение (не было ли уже отправлено)"""
+    return text not in sent_set
+
+
 async def send_once(page, text, messages, state, role="own"):
-    if text in state._sent:
+    if not _can_send(text, state._sent):
         log(f"  SKIP repeat: '{text}'")
         return False
     await human_type(page, text)
@@ -1301,6 +1299,7 @@ async def stage_free_chat(page, count, messages, state):
         state.age_validated = True
     lc = count
     name_asked = _name_already_sent(messages)
+    name_pre_set = name_asked
     from_asked = False
     nice_to_meet = False
 
@@ -1379,22 +1378,22 @@ async def stage_free_chat(page, count, messages, state):
                 log(f"  [Stage 3] TRIGGER: silence 7s -> '19'")
                 await send_once(page, "19", messages, state, role="own")
                 lc = len(msgs)
-        if name_asked or from_asked or nice_to_meet or age_triggered:
+        if (not name_pre_set and name_asked) or from_asked or nice_to_meet or age_triggered:
             break
 
     log(f"  [Stage 3] phase1 done: name={name_asked} from={from_asked} nice={nice_to_meet} age={age_triggered}")
 
-    if name_asked and not _name_already_sent(messages):
-        if _partner_name_received(messages):
-            await send_once(page, "Максим", messages, state, role="own")
-        else:
-            await send_once(page, "Максим, тебя?", messages, state, role="own")
-    elif from_asked:
+    if from_asked:
         await send_once(page, "Уже в гости собралась", messages, state, role="own")
     elif nice_to_meet:
         await send_once(page, "взаимно", messages, state, role="own")
     elif age_triggered and not _already_sent_19(messages):
         await send_once(page, "19", messages, state, role="own")
+    elif name_asked and not _name_already_sent(messages):
+        if _partner_name_received(messages):
+            await send_once(page, "Максим", messages, state, role="own")
+        else:
+            await send_once(page, "Максим, тебя?", messages, state, role="own")
 
     name_sent = name_asked
     and_you_answered = False
@@ -1521,11 +1520,6 @@ async def stage_free_chat(page, count, messages, state):
                     elif any(p in tl for p in TG_CONTINUE_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: tg-continue -> 'давай, скинь ссылку'")
                         await send_once(page, "давай, скинь ссылку", messages, state, role="own")
-                        lc = len(msgs)
-                        break
-                    elif any(p in tl for p in TELL_ABOUT_PATTERNS):
-                        log(f"  [Stage 3] TRIGGER: tell-about -> 'работу ищу, а ты?'")
-                        await send_once(page, "работу ищу, а ты?", messages, state, role="own")
                         lc = len(msgs)
                         break
                     else:
@@ -1656,6 +1650,8 @@ async def main():
                     if result is None:
                         break
                     count = result
+
+                await end_chat(page)
 
                 log(f"[Main] Chat ended. age={state.partner_age}, name={state.partner_name}, msgs={len(chat_messages)}")
 

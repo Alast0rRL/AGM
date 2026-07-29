@@ -81,7 +81,7 @@ for stage_fn in stages:
 
 ## Testing
 
-`CHat/test_bot.py` — 323 unit tests on pure logic (patterns, filters, helpers). Run:
+`CHat/test_bot.py` — 431+ unit tests on pure logic (patterns, filters, helpers). Run:
 
 ```powershell
 cd CHat
@@ -90,10 +90,12 @@ $env:PYTHONIOENCODING='utf-8'; python test_bot.py
 
 **All tests MUST pass before and after any change to bot.py.** If a test fails after your change — revert.
 
+**Every new function/pattern added to bot.py MUST have a corresponding test** in `test_bot.py` covering its logic (edge cases, false positives, correct matching).
+
 ## Workflow Protocol
 
 1. **Git commit before changes** — always commit current working state before editing
 2. **Targeted changes only** — make exactly what's requested, don't touch working parts
-3. **Run tests after changes** — `python test_bot.py`, all 289 must pass
+3. **Run tests after changes** — `python test_bot.py`, all 431+ must pass
 4. **Changelog** — record changes in `CHat/CHANGELOG.md`
 5. **Don't rewrite** — edit existing code, don't rewrite functions from scratch

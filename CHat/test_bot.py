@@ -4,6 +4,8 @@
 """
 import sys
 import os
+import tempfile
+import asyncio
 
 # Импортируем функции из bot.py
 from bot import (
@@ -11,12 +13,12 @@ from bot import (
     is_dismissive, is_underage, is_confirmation_question,
     _name_already_sent, _already_sent_19, _partner_name_received,
     _extract_name_first_word,
-    check_filters, ChatState,
+    check_filters, ChatState, _can_send, save_chat_log,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
     RUSSIAN_CONFIRM_PATTERNS, TG_CONTINUE_PATTERNS,
-    TELL_ABOUT_PATTERNS,
+    _SHORT_AND_YOU, _GREETINGS, _NOT_NAMES,
 )
 
 passed = 0
@@ -378,24 +380,6 @@ assert_true("дай тг", _tg("дай тг"))
 assert_false("привет", _tg("привет"))
 assert_false("без темы", _tg("я люблю кофе"))
 
-# ===== TELL_ABOUT_PATTERNS =====
-print("\n=== TELL_ABOUT_PATTERNS ===")
-def _tell_about(t):
-    return any(p in t.lower() for p in TELL_ABOUT_PATTERNS)
-assert_true("расписывай", _tell_about("расписывай"))
-assert_true("расписывай с воскл", _tell_about("Расписывай!"))
-assert_true("расскажи о себе", _tell_about("расскажи о себе"))
-assert_true("рассказывай", _tell_about("рассказывай"))
-assert_true("мне интересно", _tell_about("мне интересно"))
-assert_true("мне интересно предложение", _tell_about("Мне интересно"))
-assert_true("чем занимаешься", _tell_about("чем занимаешься?"))
-assert_true("что ты делаешь", _tell_about("что ты делаешь"))
-assert_true("увлекаешься", _tell_about("чем увлекаешься?"))
-assert_true("расскажи что делаешь", _tell_about("расскажи что делаешь"))
-assert_true("расскажи про себя", _tell_about("расскажи про себя"))
-assert_false("привет", _tell_about("привет"))
-assert_false("просто текст", _tell_about("я люблю кофе"))
-
 # ===== check_filters =====
 print("\n=== check_filters ===")
 assert_eq("украинский", check_filters("привiт"), "украинский язык")
@@ -488,6 +472,161 @@ assert_eq("default said_19", state.said_19, False)
 assert_eq("default name_sent", state.name_sent, False)
 assert_eq("default asked_russian", state.asked_russian, False)
 assert_eq("default stage", state.stage, 1)
+
+# ===== _SHORT_AND_YOU =====
+print("\n=== _SHORT_AND_YOU ===")
+assert_true("'те' в сете", "те" in _SHORT_AND_YOU)
+assert_true("'теб' в сете", "теб" in _SHORT_AND_YOU)
+assert_true("'и те' в сете", "и те" in _SHORT_AND_YOU)
+assert_false("пустая строка", "" in _SHORT_AND_YOU)
+assert_false("'привет' не в сете", "привет" in _SHORT_AND_YOU)
+assert_false("'тебя' не в сете", "тебя" in _SHORT_AND_YOU)
+assert_false("'а те' не в сете", "а те" in _SHORT_AND_YOU)
+assert_true("'тебе' в сете", "тебе" in _SHORT_AND_YOU)
+assert_false("'ите' не в сете", "ите" in _SHORT_AND_YOU)
+
+# ===== _GREETINGS =====
+print("\n=== _GREETINGS ===")
+for g in ["привет", "приветик", "здравствуй", "здравствуйте",
+           "хай", "хей", "здарова", "салам", "йо"]:
+    assert_true(f"приветствие '{g}' в сете", g in _GREETINGS)
+assert_false("'приветствие' не в сете", "приветствие" in _GREETINGS)
+assert_false("'приветливый' не в сете", "приветливый" in _GREETINGS)
+assert_false("'хайп' не в сете", "хайп" in _GREETINGS)
+assert_false("'саламандра' не в сете", "саламандра" in _GREETINGS)
+assert_false("'здорово' не в сете", "здорово" in _GREETINGS)
+
+# ===== _NOT_NAMES =====
+print("\n=== _NOT_NAMES ===")
+for nn in ["понятно", "круто", "ладно", "точно", "правда",
+           "интересно", "странно", "жаль", "класс", "супер",
+           "норм", "прикольно", "конечно", "наверное", "думаю",
+           "ага", "ну", "кстати", "вообще", "типа", "короче",
+           "пожалуйста", "спасибо", "извини", "прости", "ничего",
+           "окей", "ок", "нет", "да", "нормально", "угу"]:
+    assert_true(f"'{nn}' в _NOT_NAMES", nn in _NOT_NAMES)
+assert_false("'Анна' не в _NOT_NAMES", "анна" in _NOT_NAMES)
+assert_false("'Мария' не в _NOT_NAMES", "мария" in _NOT_NAMES)
+assert_false("'Катя' не в _NOT_NAMES", "катя" in _NOT_NAMES)
+assert_false("'Света' не в _NOT_NAMES", "света" in _NOT_NAMES)
+
+# ===== is_age_question: недостающие паттерны =====
+print("\n=== is_age_question (недостающие паттерны) ===")
+assert_true("скок", is_age_question("скок"))
+assert_true("сколко", is_age_question("сколко тебе"))
+assert_true("сколко без контекста", is_age_question("сколко"))
+assert_true("сколика", is_age_question("сколика"))
+assert_true("скалко", is_age_question("скалко"))
+assert_true("теье", is_age_question("теье"))
+assert_true("а теье", is_age_question("а теье"))
+assert_true("скока тебе", is_age_question("скока тебе"))
+assert_true("скок лет", is_age_question("скок лет"))
+assert_false("а тебя любят", is_age_question("а тебя любят?"))
+assert_false("сколько стоит", is_age_question("сколько стоит?"))
+
+# ===== is_self_introduction: форматы без «я» =====
+print("\n=== is_self_introduction (форматы без «я») ===")
+assert_true("Лена 19", is_self_introduction("Лена 19"))
+assert_true("Аня 17", is_self_introduction("Аня 17"))
+assert_true("Катя 18 лет", is_self_introduction("Катя 18 лет"))
+assert_true("Маша 19", is_self_introduction("Маша 19"))
+assert_true("привет я Катя!", is_self_introduction("Привет я Катя!"))
+assert_true("приветик я Маша", is_self_introduction("приветик я Маша"))
+assert_true("я Аня.", is_self_introduction("Я Аня."))
+assert_true("я Анна-Мария 19", is_self_introduction("Я Анна-Мария 19"))
+assert_true("я Аня, приятно", is_self_introduction("Я Аня, приятно"))
+assert_true("здарова я Павел", is_self_introduction("Здарова я Павел"))
+assert_false("Вика привет", is_self_introduction("Вика привет"))
+assert_false("Лена", is_self_introduction("Лена"))
+assert_false("Катя, привет", is_self_introduction("Катя, привет"))
+
+# ===== is_ukrainian: дополнительные формы =====
+print("\n=== is_ukrainian (дополнительные формы) ===")
+assert_true("тобi латиница", is_ukrainian("тобi"))
+assert_true("привiт латиница", is_ukrainian("привiт"))
+assert_false("украинский язык", is_ukrainian("украинский язык"))
+assert_false("по украински", is_ukrainian("по украински"))
+assert_false("украинская песня", is_ukrainian("украинская песня"))
+assert_true("я украинка с воскл", is_ukrainian("я украинка!"))
+assert_true("я украинка и горжусь", is_ukrainian("я украинка и горжусь этим"))
+assert_true("я украинец", is_ukrainian("я украинец"))
+
+# ===== _partner_name_received: крайние случаи =====
+print("\n=== _partner_name_received (крайние случаи) ===")
+assert_true("я Катя с заглавной", _partner_name_received([{"role": "other", "content": "Я Катя"}]))
+assert_true("меня зовут анна", _partner_name_received([{"role": "other", "content": "Меня зовут анна"}]))
+assert_true("Аня", _partner_name_received([{"role": "other", "content": "Аня"}]))
+assert_false("Анна-Мария одно слово с дефисом", _partner_name_received([{"role": "other", "content": "Анна-Мария"}]))
+assert_false("я катя с маленькой", _partner_name_received([{"role": "other", "content": "я катя"}]))
+assert_false("я маша с маленькой", _partner_name_received([{"role": "other", "content": "я маша"}]))
+assert_false("я алина с маленькой", _partner_name_received([{"role": "other", "content": "я алина"}]))
+
+# ===== check_filters: все комбинации приоритетов =====
+print("\n=== check_filters (приоритеты) ===")
+assert_eq("укр + мус", check_filters("привiт ассалам"), "украинский язык")
+assert_eq("укр + груб", check_filters("привiт молчи"), "украинский язык")
+assert_eq("укр + возраст", check_filters("привiт мне 15"), "украинский язык")
+assert_eq("мус + груб", check_filters("ассалам молчи"), "мусульманская лексика")
+assert_eq("мус + возраст", check_filters("ассалам мне 15"), "мусульманская лексика")
+assert_eq("груб + возраст", check_filters("молчи мне 15"), "грубость/отказ")
+assert_eq("нормальный текст", check_filters("привет как дела"), None)
+assert_eq("пустой текст", check_filters(""), None)
+# skip_underage
+assert_eq("skip_underage=True убирает возраст", check_filters("мне 15", skip_underage=True), None)
+assert_eq("skip_underage не убирает укр", check_filters("привiт", skip_underage=True), "украинский язык")
+
+# ===== ChatState._sent дедупликация =====
+print("\n=== ChatState._sent дедупликация ===")
+state = ChatState()
+state._sent = set()
+assert_true("_can_send новая строка", _can_send("привет", state._sent))
+state._sent.add("привет")
+assert_false("_can_send дубликат", _can_send("привет", state._sent))
+assert_true("_can_send другая строка", _can_send("как дела", state._sent))
+state._sent.add("как дела")
+assert_false("_can_send другая тоже дубликат", _can_send("как дела", state._sent))
+assert_true("_can_send снова другая", _can_send("норм", state._sent))
+assert_true("_can_send пустая строка", _can_send("", state._sent))
+state._sent.add("")
+assert_false("_can_send пустая строка дубликат", _can_send("", state._sent))
+
+# ===== Stage 3: "тебе" / "лет" больше не ловятся как имена =====
+print("\n=== Stage 3: 'тебе'/'лет' не ловятся как имена ===")
+# "тебе" не должно быть именем (баг: single-word heuristic)
+for bad in ["тебе", "лет"]:
+    assert_true(f"'{bad}' в _NOT_NAMES", bad in _NOT_NAMES)
+    assert_false(f"'{bad}' не имя по _partner_name_received",
+                  _partner_name_received([{"role": "other", "content": bad}]))
+# "тебе" — короткая форма "а тебе?" -> and-you
+assert_true("'тебе' в _SHORT_AND_YOU", "тебе" in _SHORT_AND_YOU)
+# убеждаемся, что полные формы по-прежнему работают
+assert_true("тебе? с вопросом в AND_YOU_PATTERNS",
+            any(p in "тебе?" for p in AND_YOU_PATTERNS))
+assert_false("'а те' не в _SHORT_AND_YOU", "а те" in _SHORT_AND_YOU)
+
+# ===== save_chat_log =====
+print("\n=== save_chat_log ===")
+cwd = os.getcwd()
+with tempfile.TemporaryDirectory() as tmpdir:
+    try:
+        os.chdir(tmpdir)
+        msgs = [
+            {"role": "own", "content": "привет"},
+            {"role": "other", "content": "привет!"},
+            {"role": "own", "content": "19"},
+            {"role": "other", "content": "Меня зовут Аня"},
+        ]
+        result = asyncio.run(save_chat_log(msgs, "19"))
+        assert_true("файл создан", os.path.exists(result))
+        assert_true("файл в chat_logs/", result.startswith("chat_logs"))
+        with open(result, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert_true("возраст в логе", "19" in content)
+        assert_true("теги отправителя", "Я" in content and "Собеседник" in content)
+        assert_true("сообщение привет", "привет" in content)
+        assert_true("имя Аня", "Аня" in content)
+    finally:
+        os.chdir(cwd)
 
 # ===== Резюме =====
 print(f"\n{'='*40}")
