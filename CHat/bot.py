@@ -1138,6 +1138,7 @@ async def stage_names(page, count, messages, state):
     if not state.name_sent:
         import time as _time
         _deadline = _time.time() + 10
+        name_asked_by_partner = False
 
         while _time.time() < _deadline:
             remaining = _deadline - _time.time()
@@ -1182,6 +1183,8 @@ async def stage_names(page, count, messages, state):
                 _deadline = _time.time() + 10
                 continue
             is_name_q = any(p in resp.lower() for p in NAME_ASK_PATTERNS)
+            if is_name_q:
+                name_asked_by_partner = True
             if is_name_q or state.partner_name:
                 break
 
@@ -1207,12 +1210,14 @@ async def stage_names(page, count, messages, state):
                 _deadline = _time.time() + 10
                 continue
 
-        if state.partner_name or _partner_name_received(messages):
+        if name_asked_by_partner or state.partner_name or _partner_name_received(messages):
             if _partner_name_received(messages):
+                log(f"[Stage 2] Partner name received, answering 'Максим'")
                 if await send_once(page, "Максим", messages, state, role="own"):
                     state.name_sent = True
                     count += 1
             else:
+                log(f"[Stage 2] {'Partner asked name' if name_asked_by_partner else 'Partner has name'}, answering 'Максим, тебя?'")
                 if await send_once(page, "Максим, тебя?", messages, state, role="own"):
                     state.name_sent = True
                     count += 1
