@@ -1382,6 +1382,10 @@ async def stage_free_chat(page, count, messages, state):
                     elif is_age:
                         log(f"  [Stage 3] TRIGGER: age-ask")
                         age_triggered = True
+                    elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: russian-confirm -> 'ура'")
+                        await send_once(page, "ура", messages, state, role="own")
+                        state.asked_russian = False
                     elif is_and_you:
                         if not _already_sent_19(messages):
                             log(f"  [Stage 3] TRIGGER: and-you -> '19'")
