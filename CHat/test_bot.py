@@ -17,7 +17,8 @@ from bot import (
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
-    RUSSIAN_CONFIRM_PATTERNS, TG_CONTINUE_PATTERNS,
+    RUSSIAN_CONFIRM_PATTERNS, RUSSIAN_DENY_PATTERNS,
+    ZOVUT_PATTERNS, TG_CONTINUE_PATTERNS,
     _SHORT_AND_YOU, _GREETINGS, _NOT_NAMES,
 )
 
@@ -365,6 +366,32 @@ assert_true("да, конечно", _rus_confirm("да, конечно"))
 assert_false("нет", _rus_confirm("нет"))
 assert_false("не русская", _rus_confirm("не русская"))
 assert_false("привет", _rus_confirm("привет"))
+
+# ===== ZOVUT_PATTERNS =====
+print("\n=== ZOVUT_PATTERNS ===")
+def _zovut(t):
+    return any(p in t.lower() for p in ZOVUT_PATTERNS)
+assert_true("зовут? с вопросом", _zovut("зовут?"))
+assert_true("а зовут? с префиксом", _zovut("а зовут?"))
+assert_true("как зовут? полный", _zovut("как зовут?"))
+assert_false("зовут без вопроса", _zovut("зовут"))
+assert_false("меня зовут", _zovut("меня зовут аня"))
+assert_false("пустая строка", _zovut(""))
+
+# ===== RUSSIAN_DENY_PATTERNS =====
+print("\n=== RUSSIAN_DENY_PATTERNS ===")
+def _rus_deny(t):
+    return any(p in t.lower() for p in RUSSIAN_DENY_PATTERNS)
+assert_true("нет", _rus_deny("нет"))
+assert_true("неа", _rus_deny("неа"))
+assert_true("не русская", _rus_deny("не русская"))
+assert_true("татарка", _rus_deny("татарка"))
+assert_true("армянка", _rus_deny("армянка"))
+assert_true("азербайджанка", _rus_deny("азербайджанка"))
+assert_false("да", _rus_deny("да"))
+assert_false("ага", _rus_deny("ага"))
+assert_false("конечно", _rus_deny("конечно"))
+assert_false("привет", _rus_deny("привет"))
 
 # ===== TG_CONTINUE_PATTERNS =====
 print("\n=== TG_CONTINUE_PATTERNS ===")

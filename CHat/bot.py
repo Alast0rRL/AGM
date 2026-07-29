@@ -418,6 +418,8 @@ NAME_ASK_PATTERNS = [
     "вас?", "вас ?", "а вас?", "а вас ?",
 ]
 
+ZOVUT_PATTERNS = ["зовут?"]
+
 
 def is_self_introduction(text: str) -> bool:
     """Проверяет, представляется ли собеседник ('Я Света', 'Привет Я Эльвина 19')"""
@@ -521,6 +523,13 @@ RUSSIAN_CONFIRM_PATTERNS = [
     "да", "ага",
     "да, русская", "да русская",
     "конечно", "да, конечно", "да конечно",
+]
+
+RUSSIAN_DENY_PATTERNS = [
+    "нет", "неа",
+    "не русская", "не рус",
+    "татарка", "армянка", "чувачка", "азербайджанка",
+    "казашка", "узбечка",
 ]
 
 TG_CONTINUE_PATTERNS = [
@@ -696,6 +705,7 @@ async def stage_greeting(page, count, messages, state):
     age_already_known = any(a in target_ages for a in initial_ages)
 
     is_age_q = is_age_question(resp)
+    is_zovut = any(p in resp_lower for p in ZOVUT_PATTERNS)
     is_name_q = any(p in resp_lower for p in NAME_ASK_PATTERNS)
     is_self_intro = is_self_introduction(resp)
     is_nice = any(p in resp_lower for p in NICE_TO_MEET_PATTERNS)
@@ -713,6 +723,9 @@ async def stage_greeting(page, count, messages, state):
         if not age_already_known:
             if await send_once(page, "тебе сколько?", messages, state, role="own"):
                 count += 1
+    elif is_zovut:
+        if await send_once(page, "по имени", messages, state, role="own"):
+            count += 1
     elif is_name_q and not _name_already_sent(messages):
         if _partner_name_received(messages):
             if await send_once(page, "Максим", messages, state, role="own"):
@@ -1162,6 +1175,12 @@ async def stage_names(page, count, messages, state):
                     state.partner_name = resp
                     log(f"[Stage 2] Partner name: '{resp}'")
 
+            is_zovut = any(p in resp.lower() for p in ZOVUT_PATTERNS)
+            if is_zovut:
+                if await send_once(page, "по имени", messages, state, role="own"):
+                    count += 1
+                _deadline = _time.time() + 10
+                continue
             is_name_q = any(p in resp.lower() for p in NAME_ASK_PATTERNS)
             if is_name_q or state.partner_name:
                 break
