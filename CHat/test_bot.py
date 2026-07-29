@@ -17,7 +17,7 @@ from bot import (
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
-    RUSSIAN_CONFIRM_PATTERNS, RUSSIAN_DENY_PATTERNS,
+    RUSSIAN_CONFIRM_PATTERNS, RUSSIAN_NOT_RUSSIAN_PATTERNS, RUSSIAN_DENY_PATTERNS,
     ZOVUT_PATTERNS, TG_CONTINUE_PATTERNS,
     _SHORT_AND_YOU, _GREETINGS, _NOT_NAMES,
 )
@@ -369,6 +369,19 @@ assert_true("да, конечно", _rus_confirm("да, конечно"))
 assert_false("нет", _rus_confirm("нет"))
 assert_false("не русская", _rus_confirm("не русская"))
 assert_false("привет", _rus_confirm("привет"))
+
+# ===== RUSSIAN_NOT_RUSSIAN_PATTERNS =====
+print("\n=== RUSSIAN_NOT_RUSSIAN_PATTERNS ===")
+def _rus_not_rus(t):
+    return any(p in t.lower() for p in RUSSIAN_NOT_RUSSIAN_PATTERNS)
+assert_true("а что не русские попадаются", _rus_not_rus("а что не русские попадаются"))
+assert_true("не русские попадаются", _rus_not_rus("не русские попадаются"))
+assert_true("попадаются не русские", _rus_not_rus("попадаются не русские"))
+assert_true("а что не русские", _rus_not_rus("а что не русские"))
+assert_true("а что не русские?", _rus_not_rus("а что не русские?"))
+assert_false("не русская", _rus_not_rus("не русская"))
+assert_false("привет", _rus_not_rus("привет"))
+assert_false("пустая строка", _rus_not_rus(""))
 
 # ===== ZOVUT_PATTERNS =====
 print("\n=== ZOVUT_PATTERNS ===")

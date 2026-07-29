@@ -524,6 +524,12 @@ RUSSIAN_CONFIRM_PATTERNS = [
     "конечно", "да, конечно", "да конечно",
 ]
 
+RUSSIAN_NOT_RUSSIAN_PATTERNS = [
+    "не русские попадаются",
+    "попадаются не русские",
+    "что не русские",
+]
+
 RUSSIAN_DENY_PATTERNS = [
     "нет", "неа",
     "не русская", "не рус",
@@ -1401,6 +1407,9 @@ async def stage_free_chat(page, count, messages, state):
                     elif state.confirmed_russian and t.strip().lower() in ("ты?", "а ты?"):
                         log(f"  [Stage 3] TRIGGER: russian-and-you -> 'тоже'")
                         await send_once(page, "тоже", messages, state, role="own")
+                    elif state.confirmed_russian and any(p in tl for p in RUSSIAN_NOT_RUSSIAN_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: russian-not-russian -> 'ДАА'")
+                        await send_once(page, "ДАА", messages, state, role="own")
                     elif is_and_you:
                         if not _already_sent_19(messages):
                             log(f"  [Stage 3] TRIGGER: and-you -> '19'")
@@ -1569,6 +1578,11 @@ async def stage_free_chat(page, count, messages, state):
                     elif state.confirmed_russian and t.strip().lower() in ("ты?", "а ты?"):
                         log(f"  [Stage 3] TRIGGER: russian-and-you -> 'тоже'")
                         await send_once(page, "тоже", messages, state, role="own")
+                        lc = len(msgs)
+                        break
+                    elif state.confirmed_russian and any(p in tl for p in RUSSIAN_NOT_RUSSIAN_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: russian-not-russian -> 'ДАА'")
+                        await send_once(page, "ДАА", messages, state, role="own")
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in TG_CONTINUE_PATTERNS):
