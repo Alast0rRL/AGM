@@ -50,3 +50,4 @@ Thumbs.db
 # Project specific
 user_data/
 sessions/
+chat_logs/
