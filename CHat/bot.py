@@ -626,6 +626,7 @@ class ChatState:
     said_19: bool = False
     name_sent: bool = False
     asked_russian: bool = False
+    confirmed_russian: bool = False
     russian_unhandled: int = 0
     stage: int = 1
     age_validated: bool = False
@@ -1312,6 +1313,7 @@ async def stage_names(page, count, messages, state):
         elif any(p in fu_lower for p in RUSSIAN_CONFIRM_PATTERNS):
             if await send_once(page, "ура", messages, state, role="own"):
                 state.asked_russian = False
+                state.confirmed_russian = True
                 count += 1
 
     state.stage = 3
@@ -1386,6 +1388,10 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: russian-confirm -> 'ура'")
                         await send_once(page, "ура", messages, state, role="own")
                         state.asked_russian = False
+                        state.confirmed_russian = True
+                    elif state.confirmed_russian and t.strip().lower() in ("ты?", "а ты?"):
+                        log(f"  [Stage 3] TRIGGER: russian-and-you -> 'тоже'")
+                        await send_once(page, "тоже", messages, state, role="own")
                     elif is_and_you:
                         if not _already_sent_19(messages):
                             log(f"  [Stage 3] TRIGGER: and-you -> '19'")
@@ -1548,6 +1554,12 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: russian-confirm -> 'ура'")
                         if await send_once(page, "ура", messages, state, role="own"):
                             state.asked_russian = False
+                            state.confirmed_russian = True
+                        lc = len(msgs)
+                        break
+                    elif state.confirmed_russian and t.strip().lower() in ("ты?", "а ты?"):
+                        log(f"  [Stage 3] TRIGGER: russian-and-you -> 'тоже'")
+                        await send_once(page, "тоже", messages, state, role="own")
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in TG_CONTINUE_PATTERNS):

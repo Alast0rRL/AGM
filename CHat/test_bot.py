@@ -501,6 +501,7 @@ assert_eq("default partner_age", state.partner_age, None)
 assert_eq("default said_19", state.said_19, False)
 assert_eq("default name_sent", state.name_sent, False)
 assert_eq("default asked_russian", state.asked_russian, False)
+assert_eq("default confirmed_russian", state.confirmed_russian, False)
 assert_eq("default stage", state.stage, 1)
 
 # ===== _SHORT_AND_YOU =====
