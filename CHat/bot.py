@@ -627,6 +627,7 @@ class ChatState:
     said_19: bool = False
     name_sent: bool = False
     asked_russian: bool = False
+    russian_unhandled: int = 0
     stage: int = 1
     age_validated: bool = False
     _sent: set = field(default_factory=set)
@@ -1399,6 +1400,11 @@ async def stage_free_chat(page, count, messages, state):
                     elif any(p in tl for p in LOOKING_FOR_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: looking-for -> 'тебя конечно'")
                         await send_once(page, "тебя конечно", messages, state, role="own")
+                    elif state.asked_russian:
+                        state.russian_unhandled += 1
+                        if state.russian_unhandled >= 3:
+                            log(f"  [Stage 3] Reset asked_russian (3 unhandled)")
+                            state.asked_russian = False
             lc = len(msgs)
         else:
             silence_sec += 1
@@ -1551,6 +1557,11 @@ async def stage_free_chat(page, count, messages, state):
                         lc = len(msgs)
                         break
                     else:
+                        if state.asked_russian:
+                            state.russian_unhandled += 1
+                            if state.russian_unhandled >= 3:
+                                log(f"  [Stage 3] Reset asked_russian (3 unhandled)")
+                                state.asked_russian = False
                         log(f"  [Stage 3] UNHANDLED: '{t}' (tl='{tl}')")
             lc = len(msgs)
 
