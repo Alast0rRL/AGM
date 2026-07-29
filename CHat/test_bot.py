@@ -204,6 +204,9 @@ assert_false("нормально не имя", _partner_name_received([{"role": 
 assert_true("имя с маленькой буквы", _partner_name_received([{"role": "other", "content": "катя"}]))
 assert_true("вика маленькими", _partner_name_received([{"role": "other", "content": "вика"}]))
 assert_true("аня маленькими", _partner_name_received([{"role": "other", "content": "аня"}]))
+assert_true("имя с запятой и вопросом", _partner_name_received([{"role": "other", "content": "Лиза, а тебя?"}]))
+assert_true("имя с запятой", _partner_name_received([{"role": "other", "content": "Лиза, привет"}]))
+assert_false("город с запятой не имя", _partner_name_received([{"role": "other", "content": "Москва, а ты?"}]))
 
 # ===== FROM_ASK_PATTERNS =====
 print("\n=== FROM_ASK_PATTERNS ===")

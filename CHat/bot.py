@@ -766,6 +766,8 @@ def _partner_name_received(chat_messages):
         content = msg["content"].strip()
         if is_self_introduction(content):
             return True
+        if _extract_name_first_word(content):
+            return True
         words = content.split()
         if len(words) == 1 and words[0].isalpha() and len(words[0]) >= 3:
             if _is_female_name(words[0]):
