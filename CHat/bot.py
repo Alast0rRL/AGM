@@ -23,12 +23,13 @@ _tts_queue = queue.Queue()
 _tts_ready = False
 _tts_enabled = True
 _tts_exposed = False
+_tts_volume = 1.0
 _TTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
 _TTS_FEMALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-irina-medium.onnx")
 _TTS_MALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-ruslan-medium.onnx")
 
 def _tts_worker():
-    global _tts_ready
+    global _tts_ready, _tts_volume
     import numpy as np
 
     print("  [TTS] worker starting...", flush=True)
@@ -71,6 +72,7 @@ def _tts_worker():
                 all_audio.append(np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16))
             if all_audio and sample_rate:
                 audio = np.concatenate(all_audio).astype(np.float32) / 32768.0
+                audio *= _tts_volume
                 stream = sd.Stream(samplerate=sample_rate, channels=1, dtype='float32')
                 stream.start()
                 stream.write(audio.reshape(-1, 1))
@@ -91,17 +93,22 @@ def _set_tts_enabled(val: bool):
     global _tts_enabled
     _tts_enabled = val
 
+def _set_tts_volume(val: float):
+    global _tts_volume
+    _tts_volume = max(0.0, min(1.0, val))
+
 async def setup_tts_toggle(page):
     """Экспортирует функцию переключения TTS в страницу."""
     global _tts_exposed
     if not _tts_exposed:
         await page.expose_function("_py_set_tts", _set_tts_enabled)
+        await page.expose_function("_py_set_tts_volume", _set_tts_volume)
         _tts_exposed = True
 
 async def _inject_tts_panel(page):
-    """Инжектит панель TTS в DOM + MutationObserver для авто-восстановления."""
+    """Инжектит панель TTS (mute + громкость) в DOM + MutationObserver для авто-восстановления."""
     try:
-        has = await page.evaluate("!!document.getElementById('tts-toggle-panel')")
+        has = await page.evaluate("!!document.getElementById('tts-panel')")
         if has:
             return
         body_ok = await page.evaluate("!!document.body")
@@ -110,25 +117,40 @@ async def _inject_tts_panel(page):
             return
         await page.evaluate("""
 (function(){
-var ID = 'tts-toggle-panel';
-var ON = '&#x1F50A;';
-var OFF = '&#x1F507;';
+var ID = 'tts-panel';
+var ON = '\\u{1F50A}';
+var OFF = '\\u{1F507}';
 function makePanel(){
     var el = document.getElementById(ID);
     if (el) return el;
     var p = document.createElement('div');
     p.id = ID;
-    p.dataset.enabled = 'true';
-    p.innerHTML = '<span id="tts-icon">'+ON+'</span>';
-    p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:20px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1';
-    p.onclick = function(){
-        var nv = p.dataset.enabled !== 'false' ? false : true;
-        p.dataset.enabled = nv;
-        var icon = document.getElementById('tts-icon');
-        if (icon) icon.innerHTML = nv ? ON : OFF;
-        if (window._py_set_tts) window._py_set_tts(nv);
-    };
+    p.dataset.volume = '80';
+    p.innerHTML = '<div style="display:flex;align-items:center;gap:6px">'
+        + '<span id="tts-icon" style="cursor:pointer;font-size:20px;line-height:1">'+ON+'</span>'
+        + '<input id="tts-vol" type="range" min="0" max="100" value="80" style="width:80px;cursor:pointer;vertical-align:middle;accent-color:#4CAF50">'
+        + '</div>';
+    p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:6px 10px;border-radius:8px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1';
     document.body.appendChild(p);
+    var icon = document.getElementById('tts-icon');
+    var slider = document.getElementById('tts-vol');
+    function sync(){
+        var v = parseInt(slider.value);
+        icon.innerHTML = v > 0 ? ON : OFF;
+        if (window._py_set_tts) window._py_set_tts(v > 0);
+        if (window._py_set_tts_volume) window._py_set_tts_volume(v / 100);
+    }
+    icon.onclick = function(){
+        var v = parseInt(slider.value);
+        slider.value = v > 0 ? '0' : p.dataset.volume;
+        sync();
+    };
+    slider.oninput = function(){
+        var v = parseInt(this.value);
+        if (v > 0) p.dataset.volume = v;
+        sync();
+    };
+    sync();
     return p;
 }
 makePanel();
