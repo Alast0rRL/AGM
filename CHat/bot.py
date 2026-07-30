@@ -405,6 +405,17 @@ async def end_chat(page):
         except:
             continue
 
+GOODBYES = ["Ладно, бывай", "Ну всё, удачи тебе)", "Пока)", "Ладно, мне пора"]
+
+def _make_soft_end_chat(end_chat_fn):
+    async def soft_end_chat(page, messages, state):
+        if len(messages) > 15:
+            await send_once(page, random.choice(GOODBYES), messages, state)
+        await end_chat_fn(page)
+    return soft_end_chat
+
+soft_end_chat = _make_soft_end_chat(end_chat)
+
 async def save_chat_log(messages: list, age: str):
     """Сохраняет лог чата в файл"""
     import os
@@ -827,6 +838,81 @@ _NOT_NAMES = {
     "тебе", "лет",
 }
 
+RANDOM_RESPONSES = {
+    "from_ask": [
+        "Из Казани. А ты откуда?",
+        "Я из Казани. Ты из какого города?",
+        "Казань. А ты где живёшь?",
+    ],
+    "what_doing": [
+        "Учусь в вузе, подрабатываю. А ты?",
+        "Студент, работаю курьером. А у тебя какие увлечения?",
+        "Учусь, иногда подрабатываю. А ты чем занята?",
+    ],
+    "how_are_you": [
+        "Норм, а у тебя как?",
+        "Нормально. Как сама?",
+        "Всё хорошо. Рассказывай как ты.",
+    ],
+    "nice_to_meet": [
+        "Взаимно)",
+        "Тоже приятно)",
+        "Приятно познакомиться)",
+    ],
+    "looking_for": [
+        "Знакомлюсь тут. А ты что ищешь?",
+        "Общения, может знакомства. А ты?",
+        "Интересно кто тут есть. А ты зачем здесь?",
+    ],
+    "age_answer": [
+        "19",
+        "19)",
+        "19 лет",
+    ],
+    "name_answer": [
+        "Максим",
+        "Максим)",
+    ],
+    "name_ask": [
+        "Максим, тебя?",
+        "Максим. А тебя как зовут?",
+        "Максим, а ты кто?",
+    ],
+    "russian_confirm": [
+        "Приятно)",
+        "Отлично)",
+        "Класс)",
+    ],
+    "compliment_reply": [
+        "Спасибо)",
+        "Приятно слышать)",
+        "Спасибо, ты тоже)",
+    ],
+    "reaction": [
+        "Круто",
+        "Ого",
+        "Понял",
+        "Ясно",
+        "Класс",
+    ],
+    "compliment": [
+        "У тебя красивое имя кстати)",
+        "Ты интересно рассказываешь)",
+        "С тобой приятно общаться)",
+        "Ты классная)",
+        "У тебя хороший вкус)",
+    ],
+}
+
+PROACTIVE_QUESTIONS = [
+    "А ты чем увлекаешься?",
+    "Как день проходит?",
+    "Расскажи что-нибудь интересное о себе",
+    "Какая музыка нравится?",
+    "Есть хобби какое-нибудь?",
+    "Чем любишь заниматься в свободное время?",
+]
+
 def _partner_name_received(chat_messages):
     for msg in chat_messages:
         if msg["role"] != "other":
@@ -871,6 +957,7 @@ class ChatState:
     stage: int = 1
     age_validated: bool = False
     asked_ethnicity: bool = False
+    partner_msg_count: int = 0
     _sent: set = field(default_factory=set)
 
 def _can_send(text: str, sent_set: set) -> bool:
@@ -982,7 +1069,7 @@ async def stage_greeting(page, count, messages, state):
     f = check_filters(resp)
     if f:
         print(f"ПРОПУСК: {f} в '{resp}'")
-        await end_chat(page)
+        await soft_end_chat(page, messages, state)
         return None
 
     resp_lower = resp.lower()
@@ -993,7 +1080,7 @@ async def stage_greeting(page, count, messages, state):
     underage = [a for a in initial_ages if 0 < a < 17]
     if underage:
         print(f"ПРОПУСК: несовершеннолетняя ({underage}) в '{resp}'")
-        await end_chat(page)
+        await soft_end_chat(page, messages, state)
         return None
 
     age_already_known = any(a in target_ages for a in initial_ages)
@@ -1011,7 +1098,7 @@ async def stage_greeting(page, count, messages, state):
 
     if is_age_q:
         log("  -> age question, answering '19'")
-        if await send_once(page, "19", messages, state, role="own"):
+        if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
             said_19 = True
             count += 1
         if not age_already_known:
@@ -1022,10 +1109,10 @@ async def stage_greeting(page, count, messages, state):
     #         count += 1
     elif is_name_q and not _name_already_sent(messages):
         if _partner_name_received(messages):
-            if await send_once(page, "Максим", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own"):
                 count += 1
         else:
-            if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                 count += 1
     elif is_self_intro and age_already_known:
         if await send_once(page, "Максим 19", messages, state, role="own"):
@@ -1033,20 +1120,20 @@ async def stage_greeting(page, count, messages, state):
             count += 1
     elif is_self_intro and not _name_already_sent(messages):
         if _partner_name_received(messages):
-            if await send_once(page, "Максим", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own"):
                 count += 1
         else:
-            if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                 count += 1
     elif is_nice:
-        if await send_once(page, "взаимно", messages, state, role="own"):
+        if await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own"):
             count += 1
         already_asked_age = any("сколько лет" in m.get("content", "") for m in messages if m["role"] == "own")
         if not age_already_known and not already_asked_age:
             if await send_once(page, "сколько лет", messages, state, role="own"):
                 count += 1
     elif is_from_q:
-        if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+        if await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own"):
             count += 1
         already_asked_age = any("сколько лет" in m.get("content", "") for m in messages if m["role"] == "own")
         if not age_already_known and not already_asked_age:
@@ -1058,7 +1145,7 @@ async def stage_greeting(page, count, messages, state):
                 count += 1
         else:
             if not said_19 and not _already_sent_19(messages):
-                if await send_once(page, "19", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                     said_19 = True
                     count += 1
             else:
@@ -1077,7 +1164,7 @@ async def stage_greeting(page, count, messages, state):
             if await send_once(page, "сколько лет", messages, state, role="own"):
                 count += 1
     elif is_how:
-        if await send_once(page, "норм, ты как?", messages, state, role="own"):
+        if await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own"):
             count += 1
         if not age_already_known:
             if await send_once(page, "сколько лет", messages, state, role="own"):
@@ -1090,7 +1177,7 @@ async def stage_greeting(page, count, messages, state):
         state.partner_age = str([a for a in initial_ages if a in target_ages][0])
         if not said_19 and not _already_sent_19(messages):
             if any(p in resp_lower for p in ["тебе", "тебя", "вас"]):
-                if await send_once(page, "19", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                     said_19 = True
                     count += 1
         state.said_19 = said_19
@@ -1105,23 +1192,23 @@ async def stage_greeting(page, count, messages, state):
 
     if age_text is None:
         print("ПРОПУСК: нет ответа на вопрос о возрасте")
-        await end_chat(page)
+        await soft_end_chat(page, messages, state)
         return None
 
     f = check_filters(age_text)
     if f:
         print(f"ПРОПУСК: {f} в ответе на возраст: '{age_text}'")
-        await end_chat(page)
+        await soft_end_chat(page, messages, state)
         return None
 
     age_text_lower = age_text.lower()
 
     if any(p in age_text_lower for p in NAME_ASK_PATTERNS) and not _name_already_sent(messages):
         if _partner_name_received(messages):
-            if await send_once(page, "Максим", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own"):
                 count += 1
         else:
-            if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                 count += 1
         state.name_sent = True
 
@@ -1144,7 +1231,7 @@ async def stage_greeting(page, count, messages, state):
             else:
                 if ages:
                     print(f"ПРОПУСК: возраст {ages} не в диапазоне [17,18,19]")
-                    await end_chat(page)
+                    await soft_end_chat(page, messages, state)
                     return None
                 print("ПРОПУСК: нет возраста в ответе")
                 return None
@@ -1153,7 +1240,7 @@ async def stage_greeting(page, count, messages, state):
         if any(a in target_ages for a in name_resp_ages):
             state.partner_age = str([a for a in name_resp_ages if a in target_ages][0])
             if any(p in name_resp.lower() for p in AND_YOU_PATTERNS) and not said_19 and not _already_sent_19(messages):
-                if await send_once(page, "19", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                     said_19 = True
                     count += 1
             print(f"ПОДХОДИТ ({name_resp_ages})!")
@@ -1161,12 +1248,12 @@ async def stage_greeting(page, count, messages, state):
             return count
         if name_resp_ages:
             print(f"ПРОПУСК: возраст {name_resp_ages} не в диапазоне [17,18,19]")
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
         if any(p in name_resp.lower() for p in AND_YOU_PATTERNS):
             if not said_19:
-                if await send_once(page, "19", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                     said_19 = True
                     count += 1
 
@@ -1199,7 +1286,7 @@ async def stage_greeting(page, count, messages, state):
         resp_has_and_you = any(p in resp_lower for p in AND_YOU_PATTERNS)
 
         if age_text_has_and_you and not said_19 and not _already_sent_19(messages):
-            if await send_once(page, "19", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                 said_19 = True
                 count += 1
 
@@ -1213,7 +1300,7 @@ async def stage_greeting(page, count, messages, state):
                     state.partner_age = str([a for a in ages2 if a in target_ages][0])
                     print(f"ПОДХОДИТ ({ages2})!")
                 else:
-                    await end_chat(page)
+                    await soft_end_chat(page, messages, state)
                     return None
 
         state.said_19 = said_19
@@ -1221,7 +1308,7 @@ async def stage_greeting(page, count, messages, state):
     else:
         if ages:
             print(f"ПРОПУСК: возраст {ages} не в диапазоне [17,18,19]")
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
         tl = age_text.lower()
@@ -1233,14 +1320,14 @@ async def stage_greeting(page, count, messages, state):
         is_age_q2 = is_age_question(age_text)
 
         if is_from_q2:
-            if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own"):
                 count += 1
             reply, count, _ = await wait_for_partner_msg(page, count, messages, timeout=15)
             if reply:
                 rf = check_filters(reply)
                 if rf:
                     print(f"ПРОПУСК: {rf}")
-                    await end_chat(page)
+                    await soft_end_chat(page, messages, state)
                     return None
                 reply_ages = [int(s) for s in re.findall(r'\d+', reply)]
                 if any(a in target_ages for a in reply_ages):
@@ -1260,15 +1347,15 @@ async def stage_greeting(page, count, messages, state):
                 print(f"ПОДХОДИТ ({ages2})!")
                 return count
             else:
-                await end_chat(page)
+                await soft_end_chat(page, messages, state)
                 return None
 
         elif is_name_q2 and not _name_already_sent(messages):
             if _partner_name_received(messages):
-                if await send_once(page, "Максим", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own"):
                     count += 1
             else:
-                if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                     count += 1
             name_resp, count, _ = await wait_for_partner_msg(page, count, messages, timeout=10)
             if name_resp is None:
@@ -1282,7 +1369,7 @@ async def stage_greeting(page, count, messages, state):
                 return count
             if name_resp_ages:
                 print(f"ПРОПУСК: возраст {name_resp_ages} не в диапазоне [17,18,19]")
-                await end_chat(page)
+                await soft_end_chat(page, messages, state)
                 return None
             if await send_once(page, "сколько лет", messages, state, role="own"):
                 count += 1
@@ -1295,18 +1382,18 @@ async def stage_greeting(page, count, messages, state):
                 state.partner_age = str([a for a in ages2 if a in target_ages][0])
                 print(f"ПОДХОДИТ ({ages2})!")
                 return count
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
         elif is_nice2:
-            if await send_once(page, "взаимно", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own"):
                 count += 1
             reply, count, _ = await wait_for_partner_msg(page, count, messages, timeout=15)
             if reply:
                 rf = check_filters(reply)
                 if rf:
                     print(f"ПРОПУСК: {rf}")
-                    await end_chat(page)
+                    await soft_end_chat(page, messages, state)
                     return None
                 reply_ages = [int(s) for s in re.findall(r'\d+', reply)]
                 if any(a in target_ages for a in reply_ages):
@@ -1325,18 +1412,18 @@ async def stage_greeting(page, count, messages, state):
                 state.partner_age = str([a for a in ages2 if a in target_ages][0])
                 print(f"ПОДХОДИТ ({ages2})!")
                 return count
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
         elif is_how_q2:
-            if await send_once(page, "норм, ты как?", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own"):
                 count += 1
             reply, count, _ = await wait_for_partner_msg(page, count, messages, timeout=15)
             if reply:
                 rf = check_filters(reply)
                 if rf:
                     print(f"ПРОПУСК: {rf}")
-                    await end_chat(page)
+                    await soft_end_chat(page, messages, state)
                     return None
                 reply_ages = [int(s) for s in re.findall(r'\d+', reply)]
                 if any(a in target_ages for a in reply_ages):
@@ -1355,11 +1442,11 @@ async def stage_greeting(page, count, messages, state):
                 state.partner_age = str([a for a in ages2 if a in target_ages][0])
                 print(f"ПОДХОДИТ ({ages2})!")
                 return count
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
         elif is_and_you_q2:
-            if await send_once(page, "19", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                 said_19 = True
             # Подождать 10 сек — может сама напишет возраст
             followup, count, _ = await wait_for_partner_msg(page, count, messages, timeout=10)
@@ -1383,12 +1470,12 @@ async def stage_greeting(page, count, messages, state):
                 print(f"ПОДХОДИТ ({ages2})!")
                 state.said_19 = said_19
                 return count
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
         elif is_age_q2:
             if not said_19:
-                if await send_once(page, "19", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                     said_19 = True
                     count += 1
             if await send_once(page, "тебе сколько?", messages, state, role="own"):
@@ -1403,7 +1490,7 @@ async def stage_greeting(page, count, messages, state):
                 print(f"ПОДХОДИТ ({ages2})!")
                 state.said_19 = said_19
                 return count
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
         else:
@@ -1421,7 +1508,7 @@ async def stage_greeting(page, count, messages, state):
                 state.said_19 = said_19
                 return count
             print("ПРОПУСК: собеседник не ответила на вопрос о возрасте")
-            await end_chat(page)
+            await soft_end_chat(page, messages, state)
             return None
 
 async def stage_names(page, count, messages, state):
@@ -1454,7 +1541,7 @@ async def stage_names(page, count, messages, state):
             f = check_filters(resp, skip_underage=True)
             if f:
                 print(f"ПРОПУСК: {f} в '{resp}'")
-                await end_chat(page)
+                await soft_end_chat(page, messages, state)
                 return None
 
             if state.said_19 and _said_19_at is not None:
@@ -1462,7 +1549,7 @@ async def stage_names(page, count, messages, state):
 
             if is_age_question(resp):
                 if not state.said_19:
-                    if await send_once(page, "19", messages, state, role="own"):
+                    if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                         state.said_19 = True
                         _said_19_at = _time.time()
                         count += 1
@@ -1471,14 +1558,14 @@ async def stage_names(page, count, messages, state):
 
             _tl = resp.lower()
             if any(p in _tl for p in FROM_ASK_PATTERNS) and not ("откуда" in _tl and "знаешь" in _tl):
-                if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own"):
                     count += 1
                 _deadline = _time.time() + 10
                 continue
 
             if any(p in _tl for p in AND_YOU_PATTERNS) or _tl.strip() in _SHORT_AND_YOU:
                 if not state.said_19:
-                    if await send_once(page, "19", messages, state, role="own"):
+                    if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                         state.said_19 = True
                         _said_19_at = _time.time()
                         count += 1
@@ -1506,17 +1593,17 @@ async def stage_names(page, count, messages, state):
                 continue
 
             if any(p in _tl for p in NICE_TO_MEET_PATTERNS):
-                if await send_once(page, "взаимно", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own"):
                     count += 1
                 _deadline = _time.time() + 10
                 continue
             elif any(p in _tl for p in HOW_ARE_YOU_PATTERNS):
-                if await send_once(page, "норм, ты как?", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own"):
                     count += 1
                 _deadline = _time.time() + 10
                 continue
             elif any(p in _tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
-                if await send_once(page, "Бездельничаю", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["what_doing"]), messages, state, role="own"):
                     count += 1
                 _deadline = _time.time() + 10
                 continue
@@ -1524,12 +1611,12 @@ async def stage_names(page, count, messages, state):
         if name_asked_by_partner or state.partner_name or _partner_name_received(messages):
             if _partner_name_received(messages):
                 log(f"[Stage 2] Partner name received, answering 'Максим'")
-                if await send_once(page, "Максим", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own"):
                     state.name_sent = True
                     count += 1
             else:
                 log(f"[Stage 2] {'Partner asked name' if name_asked_by_partner else 'Partner has name'}, answering 'Максим, тебя?'")
-                if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                     state.name_sent = True
                     count += 1
         else:
@@ -1537,7 +1624,7 @@ async def stage_names(page, count, messages, state):
                 elapsed = _time.time() - _said_19_at
                 if elapsed >= 10:
                     log("[Stage 2] 10s silence after 19, proactively asking name")
-                    if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+                    if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                         state.name_sent = True
                         count += 1
                 else:
@@ -1566,7 +1653,7 @@ async def stage_names(page, count, messages, state):
     f = check_filters(resp, skip_underage=True)
     if f:
         print(f"ПРОПУСК: {f} в '{resp}'")
-        await end_chat(page)
+        await soft_end_chat(page, messages, state)
         return None
 
     if is_self_introduction(resp):
@@ -1592,13 +1679,13 @@ async def stage_names(page, count, messages, state):
     if state.partner_name:
         _rl = resp.lower()
         if any(p in _rl for p in NICE_TO_MEET_PATTERNS):
-            if await send_once(page, "взаимно", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own"):
                 count += 1
         elif any(p in _rl for p in HOW_ARE_YOU_PATTERNS):
-            if await send_once(page, "норм, ты как?", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own"):
                 count += 1
         elif any(p in _rl for p in FROM_ASK_PATTERNS) and not ("откуда" in _rl and "знаешь" in _rl):
-            if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own"):
                 count += 1
 
     if state.partner_name and not state.asked_russian:
@@ -1611,20 +1698,20 @@ async def stage_names(page, count, messages, state):
         log(f"[Stage 2] Follow-up after name: '{followup}'")
         fu_lower = followup.lower()
         if any(p in fu_lower for p in NICE_TO_MEET_PATTERNS):
-            if await send_once(page, "взаимно", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own"):
                 count += 1
         elif any(p in fu_lower for p in HOW_ARE_YOU_PATTERNS):
-            if await send_once(page, "норм, ты как?", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own"):
                 count += 1
         elif any(p in fu_lower for p in WHAT_ARE_YOU_DOING_PATTERNS):
-            if await send_once(page, "Бездельничаю", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["what_doing"]), messages, state, role="own"):
                 count += 1
         elif any(p in fu_lower for p in AND_YOU_PATTERNS) or followup.strip().lower() in _SHORT_AND_YOU:
             if not _already_sent_19(messages):
-                if await send_once(page, "19", messages, state, role="own"):
+                if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                     count += 1
         elif any(p in fu_lower for p in FROM_ASK_PATTERNS) and not ("откуда" in fu_lower and "знаешь" in fu_lower):
-            if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own"):
                 count += 1
         elif any(p in fu_lower for p in RUSSIAN_DENY_PATTERNS) or followup.strip().lower() == "не":
             log(f"[Stage 2] TRIGGER: russian-deny -> 'Кто?'")
@@ -1633,7 +1720,7 @@ async def stage_names(page, count, messages, state):
                 state.asked_ethnicity = True
                 count += 1
         elif any(p in fu_lower for p in RUSSIAN_CONFIRM_PATTERNS):
-            if await send_once(page, "+вайб", messages, state, role="own"):
+            if await send_once(page, random.choice(RANDOM_RESPONSES["russian_confirm"]), messages, state, role="own"):
                 state.asked_russian = False
                 state.confirmed_russian = True
                 count += 1
@@ -1679,7 +1766,7 @@ async def stage_free_chat(page, count, messages, state):
                     f = check_filters(t, skip_underage=True)
                     if f:
                         log(f"  [Stage 3] CHAT ENDED (phase1): {f} in '{t}'")
-                        await end_chat(page)
+                        await soft_end_chat(page, messages, state)
                         return True
                     tl = t.lower()
                     is_name = any(p in tl for p in NAME_ASK_PATTERNS) or is_self_introduction(t) or (
@@ -1715,11 +1802,11 @@ async def stage_free_chat(page, count, messages, state):
                         state.asked_ethnicity = False
                         if is_non_russian(t):
                             log(f"  [Stage 3] CHAT ENDED (phase1): non-russian nationality '{t}'")
-                            await end_chat(page)
+                            await soft_end_chat(page, messages, state)
                             return True
                     elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: russian-confirm -> '+вайб'")
-                        await send_once(page, "+вайб", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["russian_confirm"]), messages, state, role="own")
                         state.asked_russian = False
                         state.confirmed_russian = True
                     elif state.confirmed_russian and t.strip().lower() in ("ты?", "а ты?"):
@@ -1731,16 +1818,16 @@ async def stage_free_chat(page, count, messages, state):
                     elif is_and_you:
                         if not _already_sent_19(messages):
                             log(f"  [Stage 3] TRIGGER: and-you -> '19'")
-                            await send_once(page, "19", messages, state, role="own")
+                            await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own")
                     elif is_how:
                         log(f"  [Stage 3] TRIGGER: how-are-you -> 'норм, ты как?'")
-                        await send_once(page, "норм, ты как?", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own")
                     elif is_doing:
                         log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
-                        await send_once(page, "Бездельничаю", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["what_doing"]), messages, state, role="own")
                     elif any(p in tl for p in LOOKING_FOR_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: looking-for -> 'Хрен его знает'")
-                        await send_once(page, "Хрен его знает", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["looking_for"]), messages, state, role="own")
                     elif state.asked_russian:
                         state.russian_unhandled += 1
                         if state.russian_unhandled >= 3:
@@ -1751,7 +1838,7 @@ async def stage_free_chat(page, count, messages, state):
             silence_sec += 1
             if silence_sec >= 7 and not _already_sent_19(messages) and not state.age_validated:
                 log(f"  [Stage 3] TRIGGER: silence 7s -> '19'")
-                await send_once(page, "19", messages, state, role="own")
+                await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own")
                 lc = len(msgs)
         if (not name_pre_set and name_asked) or from_asked or nice_to_meet or age_triggered:
             break
@@ -1759,16 +1846,16 @@ async def stage_free_chat(page, count, messages, state):
     log(f"  [Stage 3] phase1 done: name={name_asked} from={from_asked} nice={nice_to_meet} age={age_triggered}")
 
     if from_asked:
-        await send_once(page, "Уже в гости собралась", messages, state, role="own")
+        await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own")
     elif nice_to_meet:
-        await send_once(page, "взаимно", messages, state, role="own")
+        await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own")
     elif age_triggered and not _already_sent_19(messages):
-        await send_once(page, "19", messages, state, role="own")
+        await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own")
     elif name_asked and not _name_already_sent(messages):
         if _partner_name_received(messages):
-            await send_once(page, "Максим", messages, state, role="own")
+            await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own")
         else:
-            await send_once(page, "Максим, тебя?", messages, state, role="own")
+            await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own")
 
     name_sent = name_asked
     and_you_answered = False
@@ -1796,17 +1883,18 @@ async def stage_free_chat(page, count, messages, state):
                 if ro == "other":
                     log(f"  [Stage 3] msg: '{t}'")
                     await speak(t, female=True)
+                    state.partner_msg_count += 1
                     f = check_filters(t, skip_underage=True)
                     if f:
                         log(f"  [Stage 3] CHAT ENDED: {f} in '{t}'")
-                        await end_chat(page)
+                        await soft_end_chat(page, messages, state)
                         return True
                     tl = t.lower()
                     if state.asked_ethnicity:
                         state.asked_ethnicity = False
                         if is_non_russian(t):
                             log(f"  [Stage 3] CHAT ENDED: non-russian nationality '{t}'")
-                            await end_chat(page)
+                            await soft_end_chat(page, messages, state)
                             return True
                     is_question = (
                         "?" in t
@@ -1824,10 +1912,10 @@ async def stage_free_chat(page, count, messages, state):
                     if not name_asked and any(p in tl for p in NAME_ASK_PATTERNS) and not _name_already_sent(messages):
                         name_asked = True
                         if _partner_name_received(messages):
-                            if await send_once(page, "Максим", messages, state, role="own"):
+                            if await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own"):
                                 name_sent = True
                         else:
-                            if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+                            if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                                 name_sent = True
                         lc = len(msgs)
                         break
@@ -1835,33 +1923,33 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] self-intro: '{t}'")
                         name_asked = True
                         if _partner_name_received(messages):
-                            if await send_once(page, "Максим", messages, state, role="own"):
+                            if await send_once(page, random.choice(RANDOM_RESPONSES["name_answer"]), messages, state, role="own"):
                                 name_sent = True
                         else:
-                            if await send_once(page, "Максим, тебя?", messages, state, role="own"):
+                            if await send_once(page, random.choice(RANDOM_RESPONSES["name_ask"]), messages, state, role="own"):
                                 name_sent = True
                         lc = len(msgs)
                         break
                     elif not from_asked and any(p in tl for p in FROM_ASK_PATTERNS) and not ("откуда" in tl and "знаешь" in tl):
                         from_asked = True
-                        if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
+                        if await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own"):
                             pass
                         lc = len(msgs)
                         break
                     elif not nice_to_meet and any(p in tl for p in NICE_TO_MEET_PATTERNS):
                         nice_to_meet = True
-                        if await send_once(page, "взаимно", messages, state, role="own"):
+                        if await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own"):
                             pass
                         lc = len(msgs)
                         break
                     elif is_age_question(t):
-                        if await send_once(page, "19", messages, state, role="own"):
+                        if await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own"):
                             pass
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in COMPLIMENT_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: compliment -> 'спасибо)'")
-                        await send_once(page, "спасибо)", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["compliment_reply"]), messages, state, role="own")
                     elif is_confirmation_question(t):
                         log(f"  [Stage 3] TRIGGER: confirmation -> 'да'")
                         await send_once(page, "да", messages, state, role="own")
@@ -1871,17 +1959,17 @@ async def stage_free_chat(page, count, messages, state):
                         await send_once(page, "нет", messages, state, role="own")
                     elif any(p in tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
-                        await send_once(page, "Бездельничаю", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["what_doing"]), messages, state, role="own")
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in LOOKING_FOR_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: looking-for -> 'Хрен его знает'")
-                        await send_once(page, "Хрен его знает", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["looking_for"]), messages, state, role="own")
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in HOW_ARE_YOU_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: how-are-you -> 'норм, ты как?'")
-                        await send_once(page, "норм, ты как?", messages, state, role="own")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own")
                         lc = len(msgs)
                         break
                     elif name_sent and is_single_name and state.partner_name is None:
@@ -1901,7 +1989,7 @@ async def stage_free_chat(page, count, messages, state):
                         break
                     elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: russian-confirm -> '+вайб'")
-                        if await send_once(page, "+вайб", messages, state, role="own"):
+                        if await send_once(page, random.choice(RANDOM_RESPONSES["russian_confirm"]), messages, state, role="own"):
                             state.asked_russian = False
                             state.confirmed_russian = True
                         lc = len(msgs)
@@ -1927,13 +2015,22 @@ async def stage_free_chat(page, count, messages, state):
                             if state.russian_unhandled >= 3:
                                 log(f"  [Stage 3] Reset asked_russian (3 unhandled)")
                                 state.asked_russian = False
+                        if "?" not in t and not tl.startswith("кто"):
+                            await send_once(page, random.choice(RANDOM_RESPONSES["reaction"]), messages, state, role="own")
                         log(f"  [Stage 3] UNHANDLED: '{t}' (tl='{tl}')")
             lc = len(msgs)
+            if state.partner_msg_count > 0:
+                if state.partner_msg_count % 10 == 0:
+                    log(f"  [Stage 3] COMPLIMENT: every-10")
+                    await send_once(page, random.choice(RANDOM_RESPONSES["compliment"]), messages, state)
+                elif state.partner_msg_count % 5 == 0:
+                    log(f"  [Stage 3] PROACTIVE: every-5")
+                    await send_once(page, random.choice(PROACTIVE_QUESTIONS), messages, state)
         else:
             silence_sec += 1
             if silence_sec >= 10:
-                log(f"  [Stage 3] TRIGGER: silence 10s -> '\u0427\u043e \u0437\u0430\u0434\u0443\u043c\u0430\u043b\u0430\u0441\u044c?'")
-                if await send_once(page, "\u0427\u043e \u0437\u0430\u0434\u0443\u043c\u0430\u043b\u0430\u0441\u044c?", messages, state, role="own"):
+                log(f"  [Stage 3] TRIGGER: silence 10s -> 'Чо задумалась?'")
+                if await send_once(page, "Чо задумалась?", messages, state, role="own"):
                     silence_sec = 0
 
 UKRAINIAN_TRIGGERS = ["привiт", "привіт", "тобi", "тобі"]
