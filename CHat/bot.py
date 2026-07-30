@@ -195,7 +195,7 @@ async def human_type(page, text):
     _bot_is_typing = True
     await page.click(INPUT_FIELD)
     try:
-        await page.type(INPUT_FIELD, text, delay=random.randint(10, 30))
+        await page.fill(INPUT_FIELD, text)
         await page.keyboard.press("Enter")
     finally:
         _bot_is_typing = False
@@ -2055,10 +2055,17 @@ async def stage_free_chat(page, count, messages, state):
                     await send_once(page, random.choice(PROACTIVE_QUESTIONS), messages, state)
         else:
             silence_sec += 1
-            if silence_sec >= 10:
-                log(f"  [Stage 3] TRIGGER: silence 10s -> 'Чо задумалась?'")
-                if await send_once(page, "Чо задумалась?", messages, state, role="own"):
-                    silence_sec = 0
+            if silence_sec >= 20:
+                last_own = None
+                for m in reversed(messages):
+                    if m["role"] in ("own", "self"):
+                        last_own = m["content"]
+                        break
+                bot_waiting = last_own and "?" in last_own
+                if not bot_waiting:
+                    log(f"  [Stage 3] TRIGGER: silence 20s -> 'Чо задумалась?'")
+                    if await send_once(page, "Чо задумалась?", messages, state, role="own"):
+                        silence_sec = 0
 
 UKRAINIAN_TRIGGERS = ["привiт", "привіт", "тобi", "тобі"]
 
@@ -2071,6 +2078,9 @@ def is_ukrainian(text: str) -> bool:
             return True
     # "украинка/украинец" только как признание ("я украинка"), не как вопрос ("ты украинец?")
     if re.search(r'\bя\b.*украинк', t) or re.search(r'\bя\b.*украинец', t):
+        return True
+    # "из/с/на Украины/Украине" — признание принадлежности
+    if re.search(r'\b(из|с|на)\b.*украин', t):
         return True
     return False
 
