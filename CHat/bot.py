@@ -1522,8 +1522,13 @@ async def stage_names(page, count, messages, state):
         elif any(p in fu_lower for p in FROM_ASK_PATTERNS) and not ("откуда" in fu_lower and "знаешь" in fu_lower):
             if await send_once(page, "Уже в гости собралась", messages, state, role="own"):
                 count += 1
+        elif any(p in fu_lower for p in RUSSIAN_DENY_PATTERNS) or followup.strip().lower() == "не":
+            log(f"[Stage 2] TRIGGER: russian-deny -> 'Кто?'")
+            if await send_once(page, "Кто?", messages, state, role="own"):
+                state.asked_russian = False
+                count += 1
         elif any(p in fu_lower for p in RUSSIAN_CONFIRM_PATTERNS):
-            if await send_once(page, "ура", messages, state, role="own"):
+            if await send_once(page, "+вайб", messages, state, role="own"):
                 state.asked_russian = False
                 state.confirmed_russian = True
                 count += 1
@@ -1595,14 +1600,18 @@ async def stage_free_chat(page, count, messages, state):
                     elif is_age:
                         log(f"  [Stage 3] TRIGGER: age-ask")
                         age_triggered = True
+                    elif state.asked_russian and (any(p in tl for p in RUSSIAN_DENY_PATTERNS) or t.strip().lower() == "не"):
+                        log(f"  [Stage 3] TRIGGER: russian-deny -> 'Кто?'")
+                        await send_once(page, "Кто?", messages, state, role="own")
+                        state.asked_russian = False
                     elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
-                        log(f"  [Stage 3] TRIGGER: russian-confirm -> 'ура'")
-                        await send_once(page, "ура", messages, state, role="own")
+                        log(f"  [Stage 3] TRIGGER: russian-confirm -> '+вайб'")
+                        await send_once(page, "+вайб", messages, state, role="own")
                         state.asked_russian = False
                         state.confirmed_russian = True
                     elif state.confirmed_russian and t.strip().lower() in ("ты?", "а ты?"):
-                        log(f"  [Stage 3] TRIGGER: russian-and-you -> 'тоже'")
-                        await send_once(page, "тоже", messages, state, role="own")
+                        log(f"  [Stage 3] TRIGGER: russian-and-you -> 'русский'")
+                        await send_once(page, "русский", messages, state, role="own")
                     elif state.confirmed_russian and any(p in tl for p in RUSSIAN_NOT_RUSSIAN_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: russian-not-russian -> 'ДАА'")
                         await send_once(page, "ДАА", messages, state, role="own")
@@ -1617,8 +1626,8 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
                         await send_once(page, "Бездельничаю", messages, state, role="own")
                     elif any(p in tl for p in LOOKING_FOR_PATTERNS):
-                        log(f"  [Stage 3] TRIGGER: looking-for -> 'тебя конечно'")
-                        await send_once(page, "тебя конечно", messages, state, role="own")
+                        log(f"  [Stage 3] TRIGGER: looking-for -> 'Хрен его знает'")
+                        await send_once(page, "Хрен его знает", messages, state, role="own")
                     elif state.asked_russian:
                         state.russian_unhandled += 1
                         if state.russian_unhandled >= 3:
@@ -1746,8 +1755,8 @@ async def stage_free_chat(page, count, messages, state):
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in LOOKING_FOR_PATTERNS):
-                        log(f"  [Stage 3] TRIGGER: looking-for -> 'тебя конечно'")
-                        await send_once(page, "тебя конечно", messages, state, role="own")
+                        log(f"  [Stage 3] TRIGGER: looking-for -> 'Хрен его знает'")
+                        await send_once(page, "Хрен его знает", messages, state, role="own")
                         lc = len(msgs)
                         break
                     elif any(p in tl for p in HOW_ARE_YOU_PATTERNS):
@@ -1763,16 +1772,22 @@ async def stage_free_chat(page, count, messages, state):
                                 state.asked_russian = True
                         lc = len(msgs)
                         break
+                    elif state.asked_russian and (any(p in tl for p in RUSSIAN_DENY_PATTERNS) or t.strip().lower() == "не"):
+                        log(f"  [Stage 3] TRIGGER: russian-deny -> 'Кто?'")
+                        if await send_once(page, "Кто?", messages, state, role="own"):
+                            state.asked_russian = False
+                        lc = len(msgs)
+                        break
                     elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
-                        log(f"  [Stage 3] TRIGGER: russian-confirm -> 'ура'")
-                        if await send_once(page, "ура", messages, state, role="own"):
+                        log(f"  [Stage 3] TRIGGER: russian-confirm -> '+вайб'")
+                        if await send_once(page, "+вайб", messages, state, role="own"):
                             state.asked_russian = False
                             state.confirmed_russian = True
                         lc = len(msgs)
                         break
                     elif state.confirmed_russian and t.strip().lower() in ("ты?", "а ты?"):
-                        log(f"  [Stage 3] TRIGGER: russian-and-you -> 'тоже'")
-                        await send_once(page, "тоже", messages, state, role="own")
+                        log(f"  [Stage 3] TRIGGER: russian-and-you -> 'русский'")
+                        await send_once(page, "русский", messages, state, role="own")
                         lc = len(msgs)
                         break
                     elif state.confirmed_russian and any(p in tl for p in RUSSIAN_NOT_RUSSIAN_PATTERNS):

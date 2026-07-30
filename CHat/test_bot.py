@@ -414,6 +414,13 @@ assert_false("да", _rus_deny("да"))
 assert_false("ага", _rus_deny("ага"))
 assert_false("конечно", _rus_deny("конечно"))
 assert_false("привет", _rus_deny("привет"))
+# exact "не" — отдельная проверка (не входит в RUSSIAN_DENY_PATTERNS как substring)
+def _rus_deny_or_ne(t):
+    return any(p in t.lower() for p in RUSSIAN_DENY_PATTERNS) or t.strip().lower() == "не"
+assert_true("не", _rus_deny_or_ne("не"))
+assert_true("нет", _rus_deny_or_ne("нет"))
+assert_false("не знаю", _rus_deny_or_ne("не знаю"))
+assert_false("не хочу", _rus_deny_or_ne("не хочу"))
 
 # ===== TG_CONTINUE_PATTERNS =====
 print("\n=== TG_CONTINUE_PATTERNS ===")
