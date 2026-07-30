@@ -20,6 +20,8 @@ from bot import (
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
     RUSSIAN_CONFIRM_PATTERNS, RUSSIAN_NOT_RUSSIAN_PATTERNS, RUSSIAN_DENY_PATTERNS,
     ZOVUT_PATTERNS, TG_CONTINUE_PATTERNS,
+    NON_RUSSIAN_NATIONALITIES,
+    is_non_russian,
     _SHORT_AND_YOU, _GREETINGS, _NOT_NAMES, FEMALE_NAMES,
 )
 
@@ -828,6 +830,29 @@ with tempfile.TemporaryDirectory() as tmpdir:
         assert_true("other как Собеседник", "[Собеседник]" in content2)
     finally:
         os.chdir(cwd)
+
+
+# ===== is_non_russian =====
+print("\n=== is_non_russian ===")
+assert_true("украинка", is_non_russian("украинка"))
+assert_true("я украинка", is_non_russian("я украинка"))
+assert_true("украинка я", is_non_russian("украинка я"))
+assert_true("даргинка", is_non_russian("даргинка"))
+assert_true("лезгинка", is_non_russian("лезгинка"))
+assert_true("турчанка", is_non_russian("турчанка"))
+assert_true("армянка", is_non_russian("армянка"))
+assert_true("татарка", is_non_russian("татарка"))
+assert_true("казашка", is_non_russian("казашка"))
+assert_true("белоруска", is_non_russian("белоруска"))
+assert_true("аварка в тексте", is_non_russian("я аварка"))
+assert_true("цыганка", is_non_russian("цыганка"))
+assert_true("еврейка", is_non_russian("еврейка"))
+assert_false("вопрос: ты украинка?", is_non_russian("ты украинка?"))
+assert_false("пустой", is_non_russian(""))
+assert_false("None", is_non_russian(None))
+assert_false("обычный текст", is_non_russian("привет как дела"))
+assert_false("русская", is_non_russian("русская"))
+assert_false("вопрос про национальность", is_non_russian("а ты кто по национальности?"))
 
 # ===== Резюме =====
 print(f"\n{'='*40}")

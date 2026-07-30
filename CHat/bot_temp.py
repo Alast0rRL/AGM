@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 import re
 import random
@@ -582,30 +582,6 @@ RUSSIAN_DENY_PATTERNS = [
     "казашка", "узбечка",
 ]
 
-NON_RUSSIAN_NATIONALITIES = [
-    "украинка", "белоруска",
-    "татарка", "армянка", "азербайджанка",
-    "грузинка", "казашка", "узбечка", "туркменка", "таджичка", "киргизка",
-    "молдаванка", "латышка", "литовка", "эстонка",
-    "чувашка", "марийка", "мордовка", "удмуртка", "башкирка", "калмычка",
-    "якутка", "бурятка",
-    "осетинка", "черкешенка", "чеченка", "ингушка",
-    "даргинка", "лезгинка", "аварка", "кумычка", "лакка", "табасаранка",
-    "ногайка", "адыгейка", "кабардинка", "балкарка", "карачаевка",
-    "турчанка", "персиянка", "курдянка", "цыганка", "еврейка",
-]
-
-def is_non_russian(text: str) -> bool:
-    if not text:
-        return False
-    t = text.lower().strip()
-    if "?" in t:
-        return False
-    for nat in NON_RUSSIAN_NATIONALITIES:
-        if nat in t:
-            return True
-    return False
-
 TG_CONTINUE_PATTERNS = [
     "в тг", "в телеграм", "телеграм",
     "тг", "тг?", "тг.",
@@ -870,7 +846,6 @@ class ChatState:
     russian_unhandled: int = 0
     stage: int = 1
     age_validated: bool = False
-    asked_ethnicity: bool = False
     _sent: set = field(default_factory=set)
 
 def _can_send(text: str, sent_set: set) -> bool:
@@ -1495,15 +1470,15 @@ async def stage_names(page, count, messages, state):
                     state.partner_name = resp
                     log(f"[Stage 2] Partner name: '{resp}'")
 
+            is_zovut = any(p in _tl for p in ZOVUT_PATTERNS)
+            if is_zovut:
+                _deadline = _time.time() + 10
+                continue
             is_name_q = any(p in _tl for p in NAME_ASK_PATTERNS)
             if is_name_q:
                 name_asked_by_partner = True
             if is_name_q or state.partner_name:
                 break
-            is_zovut = any(p in _tl for p in ZOVUT_PATTERNS)
-            if is_zovut:
-                _deadline = _time.time() + 10
-                continue
 
             if any(p in _tl for p in NICE_TO_MEET_PATTERNS):
                 if await send_once(page, "взаимно", messages, state, role="own"):
@@ -1630,7 +1605,6 @@ async def stage_names(page, count, messages, state):
             log(f"[Stage 2] TRIGGER: russian-deny -> 'Кто?'")
             if await send_once(page, "Кто?", messages, state, role="own"):
                 state.asked_russian = False
-                state.asked_ethnicity = True
                 count += 1
         elif any(p in fu_lower for p in RUSSIAN_CONFIRM_PATTERNS):
             if await send_once(page, "+вайб", messages, state, role="own"):
@@ -1709,14 +1683,6 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: russian-deny -> 'Кто?'")
                         await send_once(page, "Кто?", messages, state, role="own")
                         state.asked_russian = False
-                        state.asked_ethnicity = True
-
-                    elif state.asked_ethnicity:
-                        state.asked_ethnicity = False
-                        if is_non_russian(t):
-                            log(f"  [Stage 3] CHAT ENDED (phase1): non-russian nationality '{t}'")
-                            await end_chat(page)
-                            return True
                     elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: russian-confirm -> '+вайб'")
                         await send_once(page, "+вайб", messages, state, role="own")
@@ -1772,7 +1738,6 @@ async def stage_free_chat(page, count, messages, state):
 
     name_sent = name_asked
     and_you_answered = False
-    silence_sec = 0
 
     # --- Фаза 2: бесконечный цикл — отвечаем на всё ---
     while True:
@@ -1802,12 +1767,6 @@ async def stage_free_chat(page, count, messages, state):
                         await end_chat(page)
                         return True
                     tl = t.lower()
-                    if state.asked_ethnicity:
-                        state.asked_ethnicity = False
-                        if is_non_russian(t):
-                            log(f"  [Stage 3] CHAT ENDED: non-russian nationality '{t}'")
-                            await end_chat(page)
-                            return True
                     is_question = (
                         "?" in t
                         or any(p in tl for p in NAME_ASK_PATTERNS)
@@ -1896,7 +1855,6 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: russian-deny -> 'Кто?'")
                         if await send_once(page, "Кто?", messages, state, role="own"):
                             state.asked_russian = False
-                            state.asked_ethnicity = True
                         lc = len(msgs)
                         break
                     elif state.asked_russian and any(p in tl for p in RUSSIAN_CONFIRM_PATTERNS):
@@ -1929,12 +1887,6 @@ async def stage_free_chat(page, count, messages, state):
                                 state.asked_russian = False
                         log(f"  [Stage 3] UNHANDLED: '{t}' (tl='{tl}')")
             lc = len(msgs)
-        else:
-            silence_sec += 1
-            if silence_sec >= 10:
-                log(f"  [Stage 3] TRIGGER: silence 10s -> '\u0427\u043e \u0437\u0430\u0434\u0443\u043c\u0430\u043b\u0430\u0441\u044c?'")
-                if await send_once(page, "\u0427\u043e \u0437\u0430\u0434\u0443\u043c\u0430\u043b\u0430\u0441\u044c?", messages, state, role="own"):
-                    silence_sec = 0
 
 UKRAINIAN_TRIGGERS = ["привiт", "привіт", "тобi", "тобі"]
 
