@@ -28,6 +28,11 @@ _TTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
 _TTS_FEMALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-irina-medium.onnx")
 _TTS_MALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-ruslan-medium.onnx")
 
+# --- Определение рукописного ввода ---
+_user_typing = False
+_user_typing_stopped = 0.0
+_bot_is_typing = False
+
 def _tts_worker():
     global _tts_ready, _tts_volume
     import numpy as np
@@ -180,15 +185,20 @@ NEW_CHAT_BUTTON = "button:has-text('Начать новый чат')"
 
 async def human_type(page, text):
     """Печатает текст быстро (имитация человека, но без лишних задержек)"""
+    global _bot_is_typing
     el = await page.query_selector(INPUT_FIELD)
     if not el:
         return False
     cls = await el.evaluate("el => el.closest('.emojionearea')?.className || ''")
     if 'disable' in cls:
         return False
+    _bot_is_typing = True
     await page.click(INPUT_FIELD)
-    await page.type(INPUT_FIELD, text, delay=random.randint(10, 30))
-    await page.keyboard.press("Enter")
+    try:
+        await page.type(INPUT_FIELD, text, delay=random.randint(10, 30))
+        await page.keyboard.press("Enter")
+    finally:
+        _bot_is_typing = False
     print(f"Отправлено: {text}")
     await speak(text, female=False)
     return True
@@ -847,6 +857,7 @@ async def send_once(page, text, messages, state, role="own"):
     if not _can_send(text, state._sent):
         log(f"  SKIP repeat: '{text}'")
         return False
+    await _wait_typing_cooldown()
     await human_type(page, text)
     messages.append({"role": role, "content": text})
     state._sent.add(text)
@@ -869,6 +880,39 @@ async def backfill_self_messages(page, count, messages):
                 messages.append({"role": "self", "content": text})
             new_count = i + 1
     return max(new_count, count)
+
+async def _wait_typing_cooldown():
+    """Ждёт, пока пользователь не перестанет печатать + 1с кулдаун."""
+    global _user_typing, _user_typing_stopped
+    while _user_typing:
+        await asyncio.sleep(0.2)
+    elapsed = time.time() - _user_typing_stopped
+    if _user_typing_stopped > 0 and elapsed < 1.0:
+        await asyncio.sleep(1.0 - elapsed)
+
+async def _check_user_typing(page):
+    """Фоновый опрос поля ввода: если пользователь печатает — писк и флаг."""
+    global _user_typing, _user_typing_stopped
+    while True:
+        await asyncio.sleep(0.2)
+        if _bot_is_typing:
+            continue
+        try:
+            el = await page.query_selector(INPUT_FIELD)
+            if not el:
+                continue
+            text = await el.inner_text()
+            now = time.time()
+            if text and text.strip():
+                if not _user_typing:
+                    _user_typing = True
+                    winsound.Beep(1200, 150)
+            else:
+                if _user_typing:
+                    _user_typing = False
+                    _user_typing_stopped = now
+        except:
+            pass
 
 def check_filters(text: str, skip_underage: bool = False) -> str:
     """Проверяет текст на фильтры. Возвращает причину или None."""
@@ -948,9 +992,9 @@ async def stage_greeting(page, count, messages, state):
         if not age_already_known:
             if await send_once(page, "тебе сколько?", messages, state, role="own"):
                 count += 1
-    elif is_zovut:
-        if await send_once(page, "по имени", messages, state, role="own"):
-            count += 1
+    # elif is_zovut:
+    #     if await send_once(page, "по имени", messages, state, role="own"):
+    #         count += 1
     elif is_name_q and not _name_already_sent(messages):
         if _partner_name_received(messages):
             if await send_once(page, "Максим", messages, state, role="own"):
@@ -1368,6 +1412,8 @@ async def stage_names(page, count, messages, state):
         import time as _time
         _deadline = _time.time() + 10
         name_asked_by_partner = False
+        _said_19_at = None
+        _partner_spoke_after_19 = False
 
         while _time.time() < _deadline:
             remaining = _deadline - _time.time()
@@ -1386,10 +1432,14 @@ async def stage_names(page, count, messages, state):
                 await end_chat(page)
                 return None
 
+            if state.said_19 and _said_19_at is not None:
+                _partner_spoke_after_19 = True
+
             if is_age_question(resp):
                 if not state.said_19:
                     if await send_once(page, "19", messages, state, role="own"):
                         state.said_19 = True
+                        _said_19_at = _time.time()
                         count += 1
                 _deadline = _time.time() + 10
                 continue
@@ -1405,6 +1455,7 @@ async def stage_names(page, count, messages, state):
                 if not state.said_19:
                     if await send_once(page, "19", messages, state, role="own"):
                         state.said_19 = True
+                        _said_19_at = _time.time()
                         count += 1
                 _deadline = _time.time() + 10
                 continue
@@ -1421,8 +1472,6 @@ async def stage_names(page, count, messages, state):
 
             is_zovut = any(p in _tl for p in ZOVUT_PATTERNS)
             if is_zovut:
-                if await send_once(page, "по имени", messages, state, role="own"):
-                    count += 1
                 _deadline = _time.time() + 10
                 continue
             is_name_q = any(p in _tl for p in NAME_ASK_PATTERNS)
@@ -1459,15 +1508,23 @@ async def stage_names(page, count, messages, state):
                     state.name_sent = True
                     count += 1
         else:
-            if state.said_19:
-                if not _name_already_sent(messages):
-                    log("[Stage 2] Answered age, proactively asking name")
+            if state.said_19 and _said_19_at is not None and not _partner_spoke_after_19:
+                elapsed = _time.time() - _said_19_at
+                if elapsed >= 10:
+                    log("[Stage 2] 10s silence after 19, proactively asking name")
                     if await send_once(page, "Максим, тебя?", messages, state, role="own"):
                         state.name_sent = True
                         count += 1
                 else:
-                    log("[Stage 2] Name already sent (manual), skipping")
+                    log(f"[Stage 2] Said 19 but only {elapsed:.0f}s passed, skipping to stage 3")
                     state.name_sent = True
+                    state.stage = 3
+                    return count
+            elif state.said_19 and _partner_spoke_after_19:
+                log("[Stage 2] Partner spoke after 19, skipping proactive name ask")
+                state.name_sent = True
+                state.stage = 3
+                return count
             else:
                 log("[Stage 2] No name or age question within 10s, skipping to stage 3")
                 state.name_sent = True
@@ -1939,6 +1996,8 @@ async def main():
 
         tts_thread = threading.Thread(target=_tts_worker, daemon=True)
         tts_thread.start()
+
+        asyncio.create_task(_check_user_typing(page))
 
         stages = [stage_greeting, stage_names, stage_free_chat]
 
