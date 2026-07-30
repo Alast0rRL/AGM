@@ -275,7 +275,6 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
 
 async def reset_for_new_chat(page):
     """Приводит страницу в состояние готовности к новому чату."""
-    await asyncio.sleep(1)
     try:
         new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
         if new_chat_btn and await new_chat_btn.is_visible():
@@ -283,10 +282,10 @@ async def reset_for_new_chat(page):
     except:
         pass
     try:
-        await page.goto("https://nekto.me/chat/#/", timeout=15000)
+        await page.goto("https://nekto.me/chat/#/", timeout=10000)
     except:
         pass
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
 
 async def start_new_chat(page):
     """Начинает новый чат или продолжает активный"""
@@ -308,33 +307,44 @@ async def start_new_chat(page):
     except:
         pass
     
-    # Пробуем нажать "Начать чат" если чат завершен
+    # Пробуем нажать "Начать чат" (query_selector, без ожидания)
     try:
-        new_chat_btn = await page.wait_for_selector(NEW_CHAT_BUTTON, timeout=2000)
-        if new_chat_btn:
+        new_chat_btn = await page.query_selector(NEW_CHAT_BUTTON)
+        if new_chat_btn and await new_chat_btn.is_visible():
             await new_chat_btn.click()
             await asyncio.sleep(1)
     except:
-        # Если кнопки нет, идем на главную и ищем основную кнопку
+        pass
+
+    # Если поле ввода уже есть — чат уже активен
+    try:
+        inp = await page.query_selector(INPUT_FIELD)
+        if inp and await inp.is_visible():
+            msgs = await page.query_selector_all(MESSAGES)
+            return len(msgs)
+    except:
+        pass
+
+    # Иначе идём на главную и жмём START_BUTTON
+    try:
+        await page.goto("https://nekto.me/chat/#/", timeout=10000)
+    except:
+        pass
+    await asyncio.sleep(1)
+    try:
+        await page.wait_for_selector(START_BUTTON, timeout=5000)
+        await page.click(START_BUTTON)
+    except:
         try:
-            await page.goto("https://nekto.me/chat/#/", timeout=15000)
+            await page.reload(timeout=10000)
         except:
             pass
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
         try:
             await page.wait_for_selector(START_BUTTON, timeout=10000)
             await page.click(START_BUTTON)
         except:
-            try:
-                await page.reload(timeout=15000)
-            except:
-                pass
-            await asyncio.sleep(3)
-            try:
-                await page.wait_for_selector(START_BUTTON, timeout=20000)
-                await page.click(START_BUTTON)
-            except:
-                raise
+            raise
     
     # Принять правила (если выскочат)
     try:
@@ -356,18 +366,16 @@ async def start_new_chat(page):
 
 async def end_chat(page):
     """Завершает текущий чат"""
-    # 1. Ищем кнопку "Завершить" по всем известным селекторам
-    stop = None
+    # 1. Быстрая проверка кнопки "Завершить" через query_selector (без ожидания)
     for selector in STOP_BUTTON.split(", "):
         try:
-            stop = await page.wait_for_selector(selector, timeout=2000)
-            if stop:
+            stop = await page.query_selector(selector)
+            if stop and await stop.is_visible():
                 await stop.click()
                 break
         except:
             continue
-
-    if not stop:
+    else:
         return
 
     # 2. Ждём и нажимаем подтверждение в диалоговом окне
@@ -1909,8 +1917,6 @@ async def main():
                     if result is None:
                         break
                     count = result
-
-                await end_chat(page)
 
                 log(f"[Main] Chat ended. age={state.partner_age}, name={state.partner_name}, msgs={len(chat_messages)}")
 
