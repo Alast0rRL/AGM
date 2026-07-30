@@ -19,7 +19,7 @@ from bot import (
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
     RUSSIAN_CONFIRM_PATTERNS, RUSSIAN_NOT_RUSSIAN_PATTERNS, RUSSIAN_DENY_PATTERNS,
-    ZOVUT_PATTERNS, TG_CONTINUE_PATTERNS,
+    ZOVUT_PATTERNS, TG_CONTINUE_PATTERNS, TELL_ABOUT_PATTERNS,
     NON_RUSSIAN_NATIONALITIES,
     is_non_russian,
     _SHORT_AND_YOU, _GREETINGS, _NOT_NAMES, FEMALE_NAMES,
@@ -437,6 +437,33 @@ assert_true("свой тг", _tg("напиши свой тг"))
 assert_true("дай тг", _tg("дай тг"))
 assert_false("привет", _tg("привет"))
 assert_false("без темы", _tg("я люблю кофе"))
+
+# ===== TELL_ABOUT_PATTERNS =====
+print("\n=== TELL_ABOUT_PATTERNS ===")
+def _tell(t):
+    return any(p in t.lower() for p in TELL_ABOUT_PATTERNS)
+assert_true("расскажи о себе", _tell("расскажи о себе"))
+assert_true("расскажи про себя", _tell("расскажи про себя"))
+assert_true("рассказывай", _tell("рассказывай"))
+assert_true("расскажи что-нибудь", _tell("расскажи что-нибудь"))
+assert_true("что расскажешь", _tell("что расскажешь"))
+assert_true("что можешь рассказать", _tell("что можешь рассказать"))
+assert_true("о себе расскажи", _tell("о себе расскажи"))
+assert_true("про себя расскажи", _tell("про себя расскажи"))
+assert_true("опиши себя", _tell("опиши себя"))
+assert_true("охарактеризуй себя", _tell("охарактеризуй себя"))
+assert_true("что ты за человек", _tell("что ты за человек"))
+assert_true("какой ты", _tell("какой ты"))
+assert_true("расскажи мне", _tell("расскажи мне"))
+assert_false("привет", _tell("привет"))
+assert_false("как дела", _tell("как дела"))
+assert_false("чем занимаешься", _tell("чем занимаешься"))
+assert_false("откуда ты", _tell("откуда ты"))
+assert_false("красивое имя", _tell("красивое имя"))
+assert_false("спасибо", _tell("спасибо"))
+assert_false("хорошо рассказываешь", _tell("хорошо рассказываешь"))
+assert_false("рассказ интересный", _tell("рассказ интересный"))
+assert_false("ну ты расскажи да", _tell("ну ты расскажи да"))
 
 # ===== check_filters =====
 print("\n=== check_filters ===")

@@ -565,6 +565,16 @@ HOW_ARE_YOU_PATTERNS = [
     "как оно", "как там",
 ]
 
+TELL_ABOUT_PATTERNS = [
+    "расскажи о себе", "расскажи про себя",
+    "рассказывай", "расскажи что-нибудь",
+    "что расскажешь", "что можешь рассказать",
+    "о себе расскажи", "про себя расскажи",
+    "опиши себя", "характеризуй себя",
+    "что ты за человек", "какой ты",
+    "расскажи о себе расскажи", "расскажи мне",
+]
+
 CONFIRMATION_PATTERNS = ["да", "верно", "точно", "правда", "ага"]
 
 COMPLIMENT_PATTERNS = [
@@ -894,6 +904,11 @@ RANDOM_RESPONSES = {
         "Понял",
         "Ясно",
         "Класс",
+    ],
+    "tell_about": [
+        "Учусь на нефтяника, работаю там же. Родом из небольшого городка в уральских горах. В свободное время играю на гитаре и в комп. А ты рассказывай)",
+        "Нефтяник, учусь и работаю в этой сфере. Сам из маленького городка в Уральских горах. Увлекаюсь гитарой и комп играми. А ты чем живёшь?",
+        "По образованию нефтяник, там же и работаю. Из городка в уральских горах. Люблю на гитаре играть и в комп поиграть. Рассказывай о себе)",
     ],
     "compliment": [
         "У тебя красивое имя кстати)",
@@ -1737,6 +1752,7 @@ async def stage_free_chat(page, count, messages, state):
     name_pre_set = name_asked
     from_asked = False
     nice_to_meet = False
+    tell_about_asked = False
 
     log(f"  [Stage 3] age={state.partner_age}, count={count}")
 
@@ -1779,6 +1795,7 @@ async def stage_free_chat(page, count, messages, state):
                     is_and_you = any(p in tl for p in AND_YOU_PATTERNS) or t.strip().lower() in _SHORT_AND_YOU
                     is_how = any(p in tl for p in HOW_ARE_YOU_PATTERNS)
                     is_doing = any(p in tl for p in WHAT_ARE_YOU_DOING_PATTERNS)
+                    is_tell_about = any(p in tl for p in TELL_ABOUT_PATTERNS)
 
                     if is_name and not name_asked:
                         log(f"  [Stage 3] TRIGGER: name-ask")
@@ -1819,6 +1836,9 @@ async def stage_free_chat(page, count, messages, state):
                         if not _already_sent_19(messages):
                             log(f"  [Stage 3] TRIGGER: and-you -> '19'")
                             await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own")
+                    elif is_tell_about and not tell_about_asked:
+                        log(f"  [Stage 3] TRIGGER: tell-about -> '...'")
+                        tell_about_asked = True
                     elif is_how:
                         log(f"  [Stage 3] TRIGGER: how-are-you -> 'норм, ты как?'")
                         await send_once(page, random.choice(RANDOM_RESPONSES["how_are_you"]), messages, state, role="own")
@@ -1840,13 +1860,15 @@ async def stage_free_chat(page, count, messages, state):
                 log(f"  [Stage 3] TRIGGER: silence 7s -> '19'")
                 await send_once(page, random.choice(RANDOM_RESPONSES["age_answer"]), messages, state, role="own")
                 lc = len(msgs)
-        if (not name_pre_set and name_asked) or from_asked or nice_to_meet or age_triggered:
+        if (not name_pre_set and name_asked) or from_asked or nice_to_meet or age_triggered or tell_about_asked:
             break
 
     log(f"  [Stage 3] phase1 done: name={name_asked} from={from_asked} nice={nice_to_meet} age={age_triggered}")
 
     if from_asked:
         await send_once(page, random.choice(RANDOM_RESPONSES["from_ask"]), messages, state, role="own")
+    elif tell_about_asked:
+        await send_once(page, random.choice(RANDOM_RESPONSES["tell_about"]), messages, state, role="own")
     elif nice_to_meet:
         await send_once(page, random.choice(RANDOM_RESPONSES["nice_to_meet"]), messages, state, role="own")
     elif age_triggered and not _already_sent_19(messages):
@@ -1957,6 +1979,11 @@ async def stage_free_chat(page, count, messages, state):
                         log(f"  [Stage 3] TRIGGER: and-you+есть -> 'нет'")
                         and_you_answered = True
                         await send_once(page, "нет", messages, state, role="own")
+                    elif any(p in tl for p in TELL_ABOUT_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: tell-about")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["tell_about"]), messages, state, role="own")
+                        lc = len(msgs)
+                        break
                     elif any(p in tl for p in WHAT_ARE_YOU_DOING_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: what-are-you-doing -> 'Бездельничаю'")
                         await send_once(page, random.choice(RANDOM_RESPONSES["what_doing"]), messages, state, role="own")
