@@ -214,7 +214,11 @@ async def wait_for_partner_msg(page, last_count, all_messages: list = None, time
     """Ждет нового сообщения от собеседника с опциональным таймаутом"""
     import time
     start_time = time.time()
-    
+
+    # Pre-scan: подхватываем self-сообщения, пропущенные между вызовами
+    if all_messages is not None:
+        last_count = await backfill_self_messages(page, last_count, all_messages)
+
     while True:
         elapsed = time.time() - start_time
         if elapsed > 2:
@@ -408,7 +412,7 @@ async def save_chat_log(messages: list, age: str):
         f.write(f"Всего сообщений: {len(messages)}\n\n")
         
         for msg in messages:
-            role = "Я" if msg["role"] == "own" else "Собеседник"
+            role = "Я" if msg["role"] in ("own", "self") else "Собеседник"
             f.write(f"[{role}] {msg['content']}\n")
     
     print(f"Лог: {filename}")
@@ -847,6 +851,24 @@ async def send_once(page, text, messages, state, role="own"):
     messages.append({"role": role, "content": text})
     state._sent.add(text)
     return True
+
+async def backfill_self_messages(page, count, messages):
+    """Логирует self-сообщения (бот + ручной ввод), пропущенные после count."""
+    msgs = await page.query_selector_all(MESSAGES)
+    new_count = count
+    for i in range(count, len(msgs)):
+        role = await get_msg_role(page, msgs[i])
+        text = await msgs[i].inner_text()
+        if role == 'self':
+            dup = False
+            for m in messages:
+                if m.get("content") == text and m.get("role") in ("own", "self"):
+                    dup = True
+                    break
+            if not dup:
+                messages.append({"role": "self", "content": text})
+            new_count = i + 1
+    return max(new_count, count)
 
 def check_filters(text: str, skip_underage: bool = False) -> str:
     """Проверяет текст на фильтры. Возвращает причину или None."""
@@ -1925,6 +1947,7 @@ async def main():
                 count = await start_new_chat(page)
                 await _inject_tts_panel(page)
                 chat_messages = []
+                count = await backfill_self_messages(page, count, chat_messages)
                 state = ChatState()
 
                 for stage_fn in stages:

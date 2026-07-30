@@ -813,6 +813,22 @@ with tempfile.TemporaryDirectory() as tmpdir:
     finally:
         os.chdir(cwd)
 
+# save_chat_log с role='self'
+with tempfile.TemporaryDirectory() as tmpdir:
+    try:
+        os.chdir(tmpdir)
+        msgs2 = [
+            {"role": "self", "content": "тест"},
+            {"role": "other", "content": "ок"},
+        ]
+        result2 = asyncio.run(save_chat_log(msgs2, "20"))
+        with open(result2, "r", encoding="utf-8") as f:
+            content2 = f.read()
+        assert_true("self как Я", "[Я]" in content2)
+        assert_true("other как Собеседник", "[Собеседник]" in content2)
+    finally:
+        os.chdir(cwd)
+
 # ===== Резюме =====
 print(f"\n{'='*40}")
 print(f"Результат: {passed} OK, {failed} FAIL")
