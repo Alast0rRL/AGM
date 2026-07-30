@@ -1794,9 +1794,8 @@ def is_muslim(text: str) -> bool:
         if p in t:
             # "мусульман" требует самоидентификации (я мусульманка/мусульманин)
             # Вопросы про мусульман не триггерят
-            if p in ("мусульман", "мусульмани") and "?" in t:
-                if not re.search(r'\bя\b', t):
-                    continue
+            if p in ("мусульман", "мусульмани") and not re.search(r'\bя\b', t):
+                continue
             return True
     return False
 
