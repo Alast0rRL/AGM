@@ -997,7 +997,6 @@ RANDOM_RESPONSES = {
     ],
     "compliment": [
         "У тебя красивое имя кстати",
-        "Ты интересно рассказываешь",
         "С тобой приятно общаться",
         "Ты классная",
         "У тебя хороший вкус",
@@ -2171,11 +2170,9 @@ async def stage_free_chat(page, count, messages, state):
         else:
             silence_sec += 1
             if silence_sec >= 20:
-                bot_waiting = state.last_own_msg and "?" in state.last_own_msg
-                if not bot_waiting:
-                    log(f"  [Stage 3] TRIGGER: silence 20s -> 'Чо задумалась?'")
-                    await send_once(page, "Чо задумалась?", messages, state, role="own")
-                    silence_sec = 0
+                log(f"  [Stage 3] TRIGGER: silence 20s -> 'Чо задумалась?'")
+                await send_once(page, "Чо задумалась?", messages, state, role="own")
+                silence_sec = 0
 
 UKRAINIAN_TRIGGERS = ["привiт", "привіт", "тобi", "тобі"]
 
