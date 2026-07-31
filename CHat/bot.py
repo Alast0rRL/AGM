@@ -927,15 +927,6 @@ RANDOM_RESPONSES = {
     ],
 }
 
-PROACTIVE_QUESTIONS = [
-    "А ты чем увлекаешься?",
-    "Как день проходит?",
-    "Расскажи что-нибудь интересное о себе",
-    "Какая музыка нравится?",
-    "Есть хобби какое-нибудь?",
-    "Чем любишь заниматься в свободное время?",
-]
-
 def _partner_name_received(chat_messages):
     for msg in chat_messages:
         if msg["role"] != "other":
@@ -2071,13 +2062,9 @@ async def stage_free_chat(page, count, messages, state):
                                 state.asked_russian = False
                         log(f"  [Stage 3] UNHANDLED: '{t}' (tl='{tl}')")
             lc = len(msgs)
-            if partner_msg_seen and state.partner_msg_count > 0:
-                if state.partner_msg_count % 10 == 0:
-                    log(f"  [Stage 3] COMPLIMENT: every-10")
-                    await send_once(page, random.choice(RANDOM_RESPONSES["compliment"]), messages, state)
-                elif state.partner_msg_count % 5 == 0:
-                    log(f"  [Stage 3] PROACTIVE: every-5")
-                    await send_once(page, random.choice(PROACTIVE_QUESTIONS), messages, state)
+            if partner_msg_seen and state.partner_msg_count > 0 and state.partner_msg_count % 10 == 0:
+                log(f"  [Stage 3] COMPLIMENT: every-10")
+                await send_once(page, random.choice(RANDOM_RESPONSES["compliment"]), messages, state)
         else:
             silence_sec += 1
             if silence_sec >= 20:
