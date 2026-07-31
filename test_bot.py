@@ -4,6 +4,7 @@
 """
 import sys
 import os
+import time
 import tempfile
 import asyncio
 
@@ -14,7 +15,8 @@ from bot import (
     _name_already_sent, _already_sent_19, _partner_name_received,
     _extract_name_first_word,
     _levenshtein, _is_female_name,
-    check_filters, ChatState, _can_send, save_chat_log,
+    check_filters, ChatState, _can_send, save_chat_log, _chat_outcome,
+    SUCCESS_MIN_MSGS, SUCCESS_MIN_SEC,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, COMPLIMENT_THANKS_PATTERNS, LOOKING_FOR_PATTERNS,
@@ -575,6 +577,8 @@ assert_eq("default asked_russian", state.asked_russian, False)
 assert_eq("default confirmed_russian", state.confirmed_russian, False)
 assert_eq("default stage", state.stage, 1)
 assert_eq("default last_own_msg", state.last_own_msg, None)
+assert_eq("default started_at", state.started_at, 0.0)
+assert_eq("default marked_success", state.marked_success, False)
 
 # ===== _SHORT_AND_YOU =====
 print("\n=== _SHORT_AND_YOU ===")
@@ -835,6 +839,22 @@ assert_true("тебе? с вопросом в AND_YOU_PATTERNS",
             any(p in "тебе?" for p in AND_YOU_PATTERNS))
 assert_false("'а те' не в _SHORT_AND_YOU", "а те" in _SHORT_AND_YOU)
 
+# ===== _chat_outcome =====
+print("\n=== _chat_outcome ===")
+st = ChatState()
+st.started_at = time.time() - SUCCESS_MIN_SEC - 10
+long_msgs = [{"role": "other", "content": f"m{i}"} for i in range(SUCCESS_MIN_MSGS)]
+assert_eq("автокритерий: msgs+время", _chat_outcome(long_msgs, st), "auto")
+assert_eq("мало сообщений", _chat_outcome([{"role": "other", "content": "х"}], st), None)
+assert_eq("мало времени", _chat_outcome(long_msgs, ChatState()), None)
+st2 = ChatState()
+st2.marked_success = True
+assert_eq("ручная пометка", _chat_outcome([], st2), "manual")
+st3 = ChatState()
+st3.marked_success = True
+st3.started_at = time.time() - 5
+assert_eq("ручная пометка перевешивает авто", _chat_outcome([{"role": "other", "content": "х"}], st3), "manual")
+
 # ===== save_chat_log =====
 print("\n=== save_chat_log ===")
 cwd = os.getcwd()
@@ -847,19 +867,31 @@ with tempfile.TemporaryDirectory() as tmpdir:
             {"role": "own", "content": "19"},
             {"role": "other", "content": "Меня зовут Аня"},
         ]
-        result = asyncio.run(save_chat_log(msgs, "19"))
+        st = ChatState()
+        st.started_at = time.time() - 60
+        result = asyncio.run(save_chat_log(msgs, st))
+        assert_eq("неудачный диалог не сохраняется", result, None)
+        assert_false("файл не создан", os.path.exists("chat_logs"))
+
+        result = asyncio.run(save_chat_log(msgs, st, outcome="manual"))
         assert_true("файл создан", os.path.exists(result))
-        assert_true("файл в chat_logs/", result.startswith("chat_logs"))
+        assert_true("файл в chat_logs/success/", result.startswith(os.path.join("chat_logs", "success")))
         with open(result, "r", encoding="utf-8") as f:
             content = f.read()
-        assert_true("возраст в логе", "19" in content)
+        assert_true("метка manual", "Удачный чат (manual)" in content)
+        assert_true("возраст в логе", "возраст -" in content)
         assert_true("теги отправителя", "Я" in content and "Собеседник" in content)
         assert_true("сообщение привет", "привет" in content)
         assert_true("имя Аня", "Аня" in content)
+        assert_true("summary.csv создан", os.path.exists("chat_logs/summary.csv"))
+        with open("chat_logs/summary.csv", "r", encoding="utf-8-sig") as f:
+            csv_content = f.read()
+        assert_true("шапка summary", "timestamp" in csv_content)
+        assert_true("строка в summary", "manual" in csv_content)
     finally:
         os.chdir(cwd)
 
-# save_chat_log с role='self'
+# save_chat_log: ручная пометка S + role='self'
 with tempfile.TemporaryDirectory() as tmpdir:
     try:
         os.chdir(tmpdir)
@@ -867,9 +899,15 @@ with tempfile.TemporaryDirectory() as tmpdir:
             {"role": "self", "content": "тест"},
             {"role": "other", "content": "ок"},
         ]
-        result2 = asyncio.run(save_chat_log(msgs2, "20"))
+        st2 = ChatState()
+        st2.marked_success = True
+        st2.partner_age = "20"
+        result2 = asyncio.run(save_chat_log(msgs2, st2))
+        assert_true("marked_success сохраняет", result2 is not None)
         with open(result2, "r", encoding="utf-8") as f:
             content2 = f.read()
+        assert_true("метка manual из marked_success", "Удачный чат (manual)" in content2)
+        assert_true("возраст 20", "20" in content2)
         assert_true("self как Я", "[Я]" in content2)
         assert_true("other как Собеседник", "[Собеседник]" in content2)
     finally:

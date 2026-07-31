@@ -2,14 +2,13 @@
 
 ## What this is
 
-Nekto.me chat automator. Playwright (Python) drives Chrome to automate Russian chat conversations on nekto.me. **Windows-only** (`winsound`, `.bat` scripts).
+Nekto.me chat automator. Playwright (Python) drives Chrome to automate Russian chat conversations on nekto.me. **Windows-only** (`winsound`, `msvcrt`, `.bat` scripts).
 
-The entire bot lives in `CHat/bot.py` (~1280 lines). It is fully self-contained — no imports from `brain.py`, `observer.py`, or `executor.py`.
+The entire bot lives in `bot.py` (~2270 lines). It is fully self-contained.
 
 ## Key commands
 
 ```powershell
-cd CHat
 pip install -r requirements.txt
 playwright install chromium
 copy .env.example .env    # edit USER_DATA_DIR
@@ -42,7 +41,7 @@ for stage_fn in stages:
 3. If partner introduces themselves or asks name → send "Максим" or "Максим, тебя?" immediately
 4. Then wait up to 15s for partner's name response
 
-**`ChatState` dataclass** tracks conversation state between stages: `partner_name`, `partner_age`, `said_19`, `name_sent`, `stage`.
+**`ChatState` dataclass** tracks conversation state between stages: `partner_name`, `partner_age`, `said_19`, `name_sent`, `stage`, `last_own_msg`, `started_at`, `marked_success`.
 
 **Pattern matching is substring-based** (`if p in t.lower()`), not regex. This means:
 - Patterns must account for Russian typos/misspellings explicitly
@@ -51,22 +50,19 @@ for stage_fn in stages:
 
 **Bot persona**: hardcoded as "Максим", age 19. Gender check via `_partner_name_received()` — if partner already shared a name (single capitalized word or self-introduction), answers "Максим" without asking back.
 
-**TTS**: optional Piper TTS with ONNX voice models in `CHat/voices/`. Worker thread synthesizes partner messages (female) and sent messages (male). Degrades gracefully if piper/sounddevice unavailable.
+**TTS**: optional Piper TTS with ONNX voice models in `voices/`. Worker thread synthesizes partner messages (female) and sent messages (male). Degrades gracefully if piper/sounddevice unavailable.
+
+**Successful-dialogue logging**: only successful chats are saved — press `S` in console to mark current chat (outcome `manual`), or auto-criteria `SUCCESS_MIN_MSGS`/`SUCCESS_MIN_SEC` (outcome `auto`). Logs go to `chat_logs/success/`, index to `chat_logs/summary.csv`. Decision logic in `_chat_outcome()`; `save_chat_log(messages, state)` returns `None` when chat is not successful.
 
 ## Important files
 
 | File | Role |
 |------|------|
-| `CHat/bot.py` | **The** entrypoint. All logic lives here. |
-| `CHat/config.py` | Env config — `USER_DATA_DIR` and `REMOTE_DEBUGGING_PORT` used by bot.py. `LLM_API_URL`/`LLM_MODEL` are dead (LLM integration not wired). |
-| `CHat/voices/` | ONNX voice models for Piper TTS |
-| `CHat/start-chrome.bat` | Launches Chrome with `--remote-debugging-port=9222`. Kills ALL chrome.exe first. |
-| `CHat/run.bat` | Just `py bot.py` |
-
-**Unused files** (legacy drafts, not imported by bot.py):
-- `CHat/brain.py`, `CHat/observer.py`, `CHat/executor.py` — OOP modules from an earlier design
-- `QWEN.md` — references a `ChatLLM/` subproject that does not exist
-- `CHat/README.md` — describes Ollama/LLM integration that is not wired
+| `bot.py` | **The** entrypoint. All logic lives here. |
+| `config.py` | Env config — only `USER_DATA_DIR` and `REMOTE_DEBUGGING_PORT`, both used by bot.py. |
+| `voices/` | ONNX voice models for Piper TTS |
+| `start-chrome.bat` | Launches Chrome with `--remote-debugging-port=9222`. Kills ALL chrome.exe first. |
+| `run.bat` | Just `py bot.py` |
 
 ## Gotchas
 
@@ -74,17 +70,16 @@ for stage_fn in stages:
 - **Two Chrome instances**: `start-chrome.bat` starts Chrome on port 9222, then `bot.py` calls `launch_persistent_context()` which starts another. They may conflict on port or profile lock.
 - **`winsound`** — Windows-only module. Bot will crash on Linux/macOS.
 - **No lint, no typecheck** configured in this repo.
-- **`config.py` has selectors** in a `SELECTORS` dict (line ~28) but only the unused OOP modules reference it. All active selectors are hardcoded at the top of `bot.py` (lines 84–93). Edit `bot.py` directly.
-- **Chat logs** written to `chat_logs/` relative to CWD (not relative to `bot.py`). Run from `CHat/` to get `CHat/chat_logs/`.
-- **`DEBUG = True`** hardcoded in bot.py (line 13) — all `[DEBUG]` output goes to stdout.
+- **All selectors are hardcoded at the top of `bot.py`** (lines ~84–93). Edit `bot.py` directly.
+- **Chat logs** written to `chat_logs/` relative to CWD. Run from the repo root to get `AGM/chat_logs/`. The folder is gitignored; `success/` subfolder + `summary.csv` are created on demand.
+- **`DEBUG = True`** hardcoded in bot.py (line 14) — all `[DEBUG]` output goes to stdout.
 - **Response time on timeout is always 0** — `wait_for_partner_msg` returns `(None, count, 0)` on timeout, not the actual elapsed time.
 
 ## Testing
 
-`CHat/test_bot.py` — 431+ unit tests on pure logic (patterns, filters, helpers). Run:
+`test_bot.py` — 650+ unit tests on pure logic (patterns, filters, helpers). Run:
 
 ```powershell
-cd CHat
 $env:PYTHONIOENCODING='utf-8'; python test_bot.py
 ```
 
@@ -96,6 +91,6 @@ $env:PYTHONIOENCODING='utf-8'; python test_bot.py
 
 1. **Git commit before changes** — always commit current working state before editing
 2. **Targeted changes only** — make exactly what's requested, don't touch working parts
-3. **Run tests after changes** — `python test_bot.py`, all 431+ must pass
-4. **Changelog** — record changes in `CHat/CHANGELOG.md`
+3. **Run tests after changes** — `python test_bot.py`, all must pass
+4. **Changelog** — record changes in `CHANGELOG.md`
 5. **Don't rewrite** — edit existing code, don't rewrite functions from scratch

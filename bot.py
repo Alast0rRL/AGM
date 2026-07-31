@@ -4,6 +4,7 @@ import re
 import random
 import time
 import winsound
+import msvcrt
 import threading
 import queue
 from dataclasses import dataclass, field
@@ -32,6 +33,10 @@ _TTS_MALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-ruslan-medium.onnx")
 _user_typing = False
 _user_typing_stopped = 0.0
 _bot_is_typing = False
+
+# --- Логирование успешных диалогов ---
+SUCCESS_MIN_MSGS = 20
+SUCCESS_MIN_SEC = 180
 
 def _tts_worker():
     global _tts_ready, _tts_volume
@@ -416,27 +421,59 @@ def _make_soft_end_chat(end_chat_fn):
 
 soft_end_chat = _make_soft_end_chat(end_chat)
 
-async def save_chat_log(messages: list, age: str):
-    """Сохраняет лог чата в файл"""
-    import os
+def _chat_outcome(messages, state):
+    """Определяет успешность диалога: ручная пометка (S) или автокритерий."""
+    if state.marked_success:
+        return "manual"
+    duration = time.time() - state.started_at if state.started_at else 0
+    if len(messages) >= SUCCESS_MIN_MSGS and duration >= SUCCESS_MIN_SEC:
+        return "auto"
+    return None
+
+def _append_summary(timestamp, name, age, duration, total_msgs, partner_msgs, outcome, filename):
+    """Дописывает строку в chat_logs/summary.csv (создаёт файл с шапкой при первом запуске)"""
+    import csv
+    summary_path = os.path.join("chat_logs", "summary.csv")
+    header = ["timestamp", "name", "age", "duration_sec", "total_msgs", "partner_msgs", "outcome", "file"]
+    new = not os.path.exists(summary_path)
+    with open(summary_path, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        if new:
+            writer.writerow(header)
+        writer.writerow([timestamp, name, age, duration, total_msgs, partner_msgs, outcome, filename])
+
+async def save_chat_log(messages, state, outcome=None):
+    """Сохраняет лог успешного диалога в chat_logs/success/ и строку в summary.csv.
+    Возвращает имя файла или None, если диалог не удачный."""
+    if outcome is None:
+        outcome = _chat_outcome(messages, state)
+    if outcome is None:
+        return None
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Создаем папку если не существует
-    log_dir = "chat_logs"
+    log_dir = os.path.join("chat_logs", "success")
     os.makedirs(log_dir, exist_ok=True)
-    
-    filename = f"{log_dir}/chat_{timestamp}_age{age}.txt"
-    
+
+    duration = int(time.time() - state.started_at) if state.started_at else 0
+    partner_msgs = sum(1 for m in messages if m["role"] not in ("own", "self"))
+    name = state.partner_name or "-"
+    age = state.partner_age or "-"
+
+    filename = os.path.join(log_dir, f"chat_{timestamp}_age{age}.txt")
+
     with open(filename, "w", encoding="utf-8") as f:
-        f.write(f"=== Чат от {timestamp} ===\n")
-        f.write(f"Возраст собеседника: {age}\n")
-        f.write(f"Всего сообщений: {len(messages)}\n\n")
-        
+        f.write(f"=== Удачный чат ({outcome}) ===\n")
+        f.write(f"Дата: {timestamp}\n")
+        f.write(f"Собеседник: {name}, возраст {age}\n")
+        f.write(f"Длительность: {duration // 60} мин {duration % 60} с\n")
+        f.write(f"Всего сообщений: {len(messages)} (собеседник: {partner_msgs})\n\n")
+
         for msg in messages:
             role = "Я" if msg["role"] in ("own", "self") else "Собеседник"
             f.write(f"[{role}] {msg['content']}\n")
-    
-    print(f"Лог: {filename}")
+
+    _append_summary(timestamp, name, age, duration, len(messages), partner_msgs, outcome, filename)
+    print(f"Удачный диалог сохранён ({outcome}): {filename}", flush=True)
     return filename
 
 AGE_ASK_PATTERNS = [
@@ -973,6 +1010,8 @@ class ChatState:
     asked_ethnicity: bool = False
     partner_msg_count: int = 0
     last_own_msg: str = None
+    started_at: float = 0.0
+    marked_success: bool = False
     _sent: set = field(default_factory=set)
 
 def _can_send(text: str, sent_set: set) -> bool:
@@ -1042,6 +1081,24 @@ async def _check_user_typing(page):
                     _user_typing_stopped = now
         except:
             pass
+
+# --- Пометка удачных диалогов клавишей S ---
+_active_chat_state = None
+
+def _set_active_chat_state(state):
+    global _active_chat_state
+    _active_chat_state = state
+
+def _keyboard_listener():
+    """Фоновый поток: ждёт клавишу S в консоли и помечает текущий диалог удачным."""
+    try:
+        while True:
+            key = msvcrt.getch()
+            if key in (b"s", b"S") and _active_chat_state is not None:
+                _active_chat_state.marked_success = True
+                print("  [KEY] Диалог помечен как УДАЧНЫЙ (S) — будет сохранён", flush=True)
+    except Exception:
+        pass
 
 def check_filters(text: str, skip_underage: bool = False) -> str:
     """Проверяет текст на фильтры. Возвращает причину или None."""
@@ -1766,8 +1823,7 @@ async def stage_free_chat(page, count, messages, state):
         if not await _chat_alive(page):
             reason = "chat_ended"
             log(f"  [Stage 3] CHAT ENDED (phase1): {reason}")
-            if len(messages) > 10:
-                await save_chat_log(messages, state.partner_age)
+            await save_chat_log(messages, state)
             return True
         msgs = await page.query_selector_all(MESSAGES)
         if len(msgs) > lc:
@@ -1897,8 +1953,7 @@ async def stage_free_chat(page, count, messages, state):
         if not await _chat_alive(page):
             reason = "chat_ended"
             log(f"  [Stage 3] CHAT ENDED: {reason}")
-            if len(messages) > 10:
-                await save_chat_log(messages, state.partner_age)
+            await save_chat_log(messages, state)
             return True
 
         msgs = await page.query_selector_all(MESSAGES)
@@ -2188,6 +2243,9 @@ async def main():
 
         asyncio.create_task(_check_user_typing(page))
 
+        key_thread = threading.Thread(target=_keyboard_listener, daemon=True)
+        key_thread.start()
+
         stages = [stage_greeting, stage_names, stage_free_chat]
 
         while True:
@@ -2197,6 +2255,9 @@ async def main():
                 chat_messages = []
                 count = await backfill_self_messages(page, count, chat_messages)
                 state = ChatState()
+                state.started_at = time.time()
+                _set_active_chat_state(state)
+                print("  [KEY] Нажми S — пометить диалог как удачный", flush=True)
 
                 for stage_fn in stages:
                     result = await stage_fn(page, count, chat_messages, state)
@@ -2204,6 +2265,7 @@ async def main():
                         break
                     count = result
 
+                _set_active_chat_state(None)
                 log(f"[Main] Chat ended. age={state.partner_age}, name={state.partner_name}, msgs={len(chat_messages)}")
 
             except Exception as e:
