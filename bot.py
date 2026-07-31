@@ -39,6 +39,9 @@ _bot_is_typing = False
 SUCCESS_MIN_MSGS = 20
 SUCCESS_MIN_SEC = 180
 
+# --- Ручной режим: бот ничего не отправляет, пользователь общается сам ---
+_manual_mode = False
+
 def _tts_worker():
     global _tts_ready, _tts_volume
     import numpy as np
@@ -116,6 +119,11 @@ def _speed_to_length_scale() -> float:
     """Переводит скорость (%) в length_scale Piper. 100% = 0.85 (текущий дефолт)."""
     return 0.85 * 100.0 / max(40, min(200, _tts_speed))
 
+def _set_manual_mode(val):
+    global _manual_mode
+    _manual_mode = bool(val)
+    log(f"[MANUAL MODE] {'ВКЛЮЧЕН — бот не отправляет сообщения' if _manual_mode else 'выключен'}")
+
 async def setup_tts_toggle(page):
     """Экспортирует функции управления TTS в страницу."""
     global _tts_exposed
@@ -124,6 +132,7 @@ async def setup_tts_toggle(page):
         await page.expose_function("_py_set_tts_volume", _set_tts_volume)
         await page.expose_function("_py_set_tts_speed", _set_tts_speed)
         await page.expose_function("_py_mark_success", _mark_current_chat_success)
+        await page.expose_function("_py_set_manual", _set_manual_mode)
         _tts_exposed = True
 
 async def _inject_tts_panel(page):
@@ -142,7 +151,8 @@ var ID = 'tts-panel';
 var ON = '\\u{1F50A}';
 var OFF = '\\u{1F507}';
 var SAVE = '\\u{1F4BE}';
-if (!window._ttsState) window._ttsState = { volume: 80, enabled: true, speed: 100 };
+var HAND = '\\u{270B}';
+if (!window._ttsState) window._ttsState = { volume: 80, enabled: true, speed: 100, manual: false };
 var S = window._ttsState;
 function makePanel(){
     var el = document.getElementById(ID);
@@ -163,6 +173,7 @@ function makePanel(){
         +     '<span id="tts-speed-label" style="width:38px;text-align:right">100%</span>'
         +   '</div>'
         +   '<button id="tts-save" style="margin-top:6px;width:100%;background:#4CAF50;border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1.4">'+SAVE+' Сохранить чат</button>'
+        +   '<button id="tts-manual" style="margin-top:4px;width:100%;background:#555;border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1.4">'+HAND+' Ручной режим</button>'
         + '</div>';
     p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:6px 10px;border-radius:8px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1;min-width:170px';
     document.body.appendChild(p);
@@ -172,10 +183,12 @@ function makePanel(){
     var speed = document.getElementById('tts-speed');
     var speedLabel = document.getElementById('tts-speed-label');
     var save = document.getElementById('tts-save');
+    var manual = document.getElementById('tts-manual');
     function push(){
         if (window._py_set_tts) window._py_set_tts(S.enabled ? 1 : 0);
         if (window._py_set_tts_volume) window._py_set_tts_volume(S.volume / 100);
         if (window._py_set_tts_speed) window._py_set_tts_speed(S.speed);
+        if (window._py_set_manual) window._py_set_manual(S.manual ? 1 : 0);
     }
     function sync(){
         slider.value = S.volume;
@@ -183,6 +196,8 @@ function makePanel(){
         speed.value = S.speed;
         speedLabel.textContent = S.speed + '%';
         icon.innerHTML = (S.enabled && S.volume > 0) ? ON : OFF;
+        manual.style.background = S.manual ? '#e67e22' : '#555';
+        manual.textContent = S.manual ? HAND + ' Ручной режим: ВКЛ' : HAND + ' Ручной режим';
     }
     icon.onclick = function(){
         if (S.volume > 0) { S.volume = 0; S.enabled = false; }
@@ -201,6 +216,7 @@ function makePanel(){
         save.textContent = '\\u2713 Сохранено';
         setTimeout(function(){ save.textContent = SAVE + ' Сохранить чат'; }, 2000);
     };
+    manual.onclick = function(){ S.manual = !S.manual; sync(); push(); };
     sync(); push();
     return p;
 }
@@ -455,6 +471,9 @@ GOODBYES = ["Ладно, бывай", "Ну всё, удачи тебе", "По�
 
 def _make_soft_end_chat(end_chat_fn):
     async def soft_end_chat(page, messages, state):
+        if _manual_mode:
+            log("  SKIP end chat (manual mode)")
+            return
         if len(messages) > 15:
             await send_once(page, random.choice(GOODBYES), messages, state)
         await end_chat_fn(page)
@@ -1059,6 +1078,9 @@ def _can_send(text: str, sent_set: set) -> bool:
 
 
 async def send_once(page, text, messages, state, role="own"):
+    if _manual_mode:
+        log(f"  SKIP manual mode: '{text}'")
+        return False
     if not _can_send(text, state._sent):
         log(f"  SKIP repeat: '{text}'")
         return False
@@ -2295,6 +2317,8 @@ async def main():
 
         while True:
             try:
+                while _manual_mode:
+                    await asyncio.sleep(1)
                 count = await start_new_chat(page)
                 await _inject_tts_panel(page)
                 chat_messages = []

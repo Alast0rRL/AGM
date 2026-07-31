@@ -21,6 +21,7 @@ from bot import (
     SUCCESS_MIN_MSGS, SUCCESS_MIN_SEC,
     _set_tts_speed, _speed_to_length_scale,
     _set_active_chat_state, _mark_current_chat_success,
+    _set_manual_mode,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, COMPLIMENT_THANKS_PATTERNS, LOOKING_FOR_PATTERNS,
@@ -948,6 +949,18 @@ assert_true("повторная пометка идемпотентна", _mark_
 assert_true("marked_success остаётся True", st.marked_success)
 _set_active_chat_state(None)
 assert_false("после сброса не помечает", _mark_current_chat_success())
+
+
+# ===== manual mode =====
+print("\n=== manual mode ===")
+_set_manual_mode(True)
+assert_eq("включение", _bot_mod._manual_mode, True)
+_set_manual_mode(0)
+assert_eq("выключение числом", _bot_mod._manual_mode, False)
+_set_manual_mode("1")
+assert_eq("включение строкой", _bot_mod._manual_mode, True)
+_set_manual_mode(False)
+assert_eq("выключение", _bot_mod._manual_mode, False)
 
 
 # ===== is_non_russian =====

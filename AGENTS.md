@@ -54,6 +54,8 @@ for stage_fn in stages:
 
 **Successful-dialogue logging**: only successful chats are saved — press `S` in console to mark current chat (outcome `manual`), or auto-criteria `SUCCESS_MIN_MSGS`/`SUCCESS_MIN_SEC` (outcome `auto`). Logs go to `chat_logs/success/`, index to `chat_logs/summary.csv`. Decision logic in `_chat_outcome()`; `save_chat_log(messages, state)` returns `None` when chat is not successful.
 
+**Manual mode** (`_manual_mode`, panel button ✋): bot sends nothing (`send_once` gated), never ends chat via `soft_end_chat`, and `main()` won't start new chats until manual mode is off. TTS of partner messages and message collection still work.
+
 ## Important files
 
 | File | Role |
