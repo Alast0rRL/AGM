@@ -20,6 +20,7 @@ from bot import (
     check_filters, ChatState, _can_send, save_chat_log, _chat_outcome,
     SUCCESS_MIN_MSGS, SUCCESS_MIN_SEC,
     _set_tts_speed, _speed_to_length_scale,
+    _set_active_chat_state, _mark_current_chat_success,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, COMPLIMENT_THANKS_PATTERNS, LOOKING_FOR_PATTERNS,
@@ -933,6 +934,20 @@ assert_eq("clamp max 200", _bot_mod._tts_speed, 200)
 _set_tts_speed(123)
 assert_eq("int() от дробного", _bot_mod._tts_speed, 123)
 _set_tts_speed(100)
+
+
+# ===== _mark_current_chat_success =====
+print("\n=== _mark_current_chat_success ===")
+_set_active_chat_state(None)
+assert_false("нет активного чата", _mark_current_chat_success())
+st = ChatState()
+_set_active_chat_state(st)
+assert_true("активный чат помечается", _mark_current_chat_success())
+assert_true("marked_success=True", st.marked_success)
+assert_true("повторная пометка идемпотентна", _mark_current_chat_success())
+assert_true("marked_success остаётся True", st.marked_success)
+_set_active_chat_state(None)
+assert_false("после сброса не помечает", _mark_current_chat_success())
 
 
 # ===== is_non_russian =====

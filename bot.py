@@ -123,10 +123,11 @@ async def setup_tts_toggle(page):
         await page.expose_function("_py_set_tts", _set_tts_enabled)
         await page.expose_function("_py_set_tts_volume", _set_tts_volume)
         await page.expose_function("_py_set_tts_speed", _set_tts_speed)
+        await page.expose_function("_py_mark_success", _mark_current_chat_success)
         _tts_exposed = True
 
 async def _inject_tts_panel(page):
-    """Инжектит панель TTS (громкость + меню: озвучка/скорость) в DOM + MutationObserver для авто-восстановления."""
+    """Инжектит панель TTS (громкость + всегда открытое меню: озвучка/скорость + кнопка сохранения) в DOM + MutationObserver."""
     try:
         has = await page.evaluate("!!document.getElementById('tts-panel')")
         if has:
@@ -140,7 +141,7 @@ async def _inject_tts_panel(page):
 var ID = 'tts-panel';
 var ON = '\\u{1F50A}';
 var OFF = '\\u{1F507}';
-var MENU = '\\u{2630}';
+var SAVE = '\\u{1F4BE}';
 if (!window._ttsState) window._ttsState = { volume: 80, enabled: true, speed: 100 };
 var S = window._ttsState;
 function makePanel(){
@@ -151,9 +152,8 @@ function makePanel(){
     p.innerHTML = '<div style="display:flex;align-items:center;gap:6px">'
         + '<span id="tts-icon" style="cursor:pointer;font-size:20px;line-height:1">'+ON+'</span>'
         + '<input id="tts-vol" type="range" min="0" max="100" value="80" style="width:80px;cursor:pointer;vertical-align:middle;accent-color:#4CAF50">'
-        + '<span id="tts-menu-btn" style="cursor:pointer;font-size:16px;line-height:1;padding:0 3px;border-radius:4px">'+MENU+'</span>'
         + '</div>'
-        + '<div id="tts-menu" style="display:none;margin-top:6px;border-top:1px solid #444;padding-top:6px;font-size:12px">'
+        + '<div style="margin-top:6px;border-top:1px solid #444;padding-top:6px;font-size:12px">'
         +   '<label style="display:flex;align-items:center;gap:6px;cursor:pointer">'
         +     '<input id="tts-enable" type="checkbox" style="accent-color:#4CAF50;cursor:pointer"> Озвучка включена'
         +   '</label>'
@@ -162,16 +162,16 @@ function makePanel(){
         +     '<input id="tts-speed" type="range" min="50" max="150" value="100" style="flex:1;cursor:pointer;accent-color:#4CAF50">'
         +     '<span id="tts-speed-label" style="width:38px;text-align:right">100%</span>'
         +   '</div>'
+        +   '<button id="tts-save" style="margin-top:6px;width:100%;background:#4CAF50;border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1.4">'+SAVE+' Сохранить чат</button>'
         + '</div>';
     p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:6px 10px;border-radius:8px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1;min-width:170px';
     document.body.appendChild(p);
     var icon = document.getElementById('tts-icon');
     var slider = document.getElementById('tts-vol');
-    var menuBtn = document.getElementById('tts-menu-btn');
-    var menu = document.getElementById('tts-menu');
     var enable = document.getElementById('tts-enable');
     var speed = document.getElementById('tts-speed');
     var speedLabel = document.getElementById('tts-speed-label');
+    var save = document.getElementById('tts-save');
     function push(){
         if (window._py_set_tts) window._py_set_tts(S.enabled ? 1 : 0);
         if (window._py_set_tts_volume) window._py_set_tts_volume(S.volume / 100);
@@ -194,11 +194,13 @@ function makePanel(){
         if (S.volume > 0) { p.dataset.volume = S.volume; S.enabled = true; }
         sync(); push();
     };
-    menuBtn.onclick = function(){
-        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-    };
     enable.onchange = function(){ S.enabled = this.checked; sync(); push(); };
     speed.oninput = function(){ S.speed = parseInt(this.value); sync(); push(); };
+    save.onclick = function(){
+        if (window._py_mark_success) window._py_mark_success();
+        save.textContent = '\\u2713 Сохранено';
+        setTimeout(function(){ save.textContent = SAVE + ' Сохранить чат'; }, 2000);
+    };
     sync(); push();
     return p;
 }
@@ -1120,21 +1122,29 @@ async def _check_user_typing(page):
         except:
             pass
 
-# --- Пометка удачных диалогов клавишей S ---
+# --- Пометка удачных диалогов (клавиша S / кнопка в панели) ---
 _active_chat_state = None
 
 def _set_active_chat_state(state):
     global _active_chat_state
     _active_chat_state = state
 
+def _mark_current_chat_success():
+    """Помечает текущий диалог как удачный (вызывается клавишей S и кнопкой в панели TTS)."""
+    global _active_chat_state
+    if _active_chat_state is not None:
+        _active_chat_state.marked_success = True
+        print("  [KEY] Диалог помечен как УДАЧНЫЙ — будет сохранён", flush=True)
+        return True
+    return False
+
 def _keyboard_listener():
     """Фоновый поток: ждёт клавишу S в консоли и помечает текущий диалог удачным."""
     try:
         while True:
             key = msvcrt.getch()
-            if key in (b"s", b"S") and _active_chat_state is not None:
-                _active_chat_state.marked_success = True
-                print("  [KEY] Диалог помечен как УДАЧНЫЙ (S) — будет сохранён", flush=True)
+            if key in (b"s", b"S"):
+                _mark_current_chat_success()
     except Exception:
         pass
 
