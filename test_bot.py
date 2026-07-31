@@ -8,6 +8,8 @@ import time
 import tempfile
 import asyncio
 
+import bot as _bot_mod
+
 # Импортируем функции из bot.py
 from bot import (
     is_age_question, is_self_introduction, is_ukrainian, is_muslim,
@@ -17,6 +19,7 @@ from bot import (
     _levenshtein, _is_female_name,
     check_filters, ChatState, _can_send, save_chat_log, _chat_outcome,
     SUCCESS_MIN_MSGS, SUCCESS_MIN_SEC,
+    _set_tts_speed, _speed_to_length_scale,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
     NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, COMPLIMENT_THANKS_PATTERNS, LOOKING_FOR_PATTERNS,
@@ -912,6 +915,24 @@ with tempfile.TemporaryDirectory() as tmpdir:
         assert_true("other как Собеседник", "[Собеседник]" in content2)
     finally:
         os.chdir(cwd)
+
+
+# ===== TTS speed =====
+print("\n=== TTS speed ===")
+_set_tts_speed(100)
+assert_eq("100% → length_scale 0.85", round(_speed_to_length_scale(), 3), 0.85)
+_set_tts_speed(150)
+assert_eq("150% → быстрее", round(_speed_to_length_scale(), 3), 0.567)
+_set_tts_speed(50)
+assert_eq("50% → медленнее", round(_speed_to_length_scale(), 3), 1.7)
+_set_tts_speed(0)
+assert_eq("clamp min 40", _bot_mod._tts_speed, 40)
+assert_eq("40% → 2.125", round(_speed_to_length_scale(), 3), 2.125)
+_set_tts_speed(999)
+assert_eq("clamp max 200", _bot_mod._tts_speed, 200)
+_set_tts_speed(123)
+assert_eq("int() от дробного", _bot_mod._tts_speed, 123)
+_set_tts_speed(100)
 
 
 # ===== is_non_russian =====

@@ -25,6 +25,7 @@ _tts_ready = False
 _tts_enabled = True
 _tts_exposed = False
 _tts_volume = 1.0
+_tts_speed = 100
 _TTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices")
 _TTS_FEMALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-irina-medium.onnx")
 _TTS_MALE_MODEL = os.path.join(_TTS_DIR, "ru_RU-ruslan-medium.onnx")
@@ -54,7 +55,6 @@ def _tts_worker():
     try:
         female_voice = PiperVoice.load(_TTS_FEMALE_MODEL)
         male_voice = PiperVoice.load(_TTS_MALE_MODEL)
-        _syn_config = SynthesisConfig(length_scale=0.85)
         print("  [TTS] voices loaded", flush=True)
     except Exception as e:
         print(f"  [TTS] voice load failed: {e}", flush=True)
@@ -76,7 +76,8 @@ def _tts_worker():
         try:
             all_audio = []
             sample_rate = None
-            for chunk in voice.synthesize(text, syn_config=_syn_config):
+            syn_config = SynthesisConfig(length_scale=_speed_to_length_scale())
+            for chunk in voice.synthesize(text, syn_config=syn_config):
                 if sample_rate is None:
                     sample_rate = chunk.sample_rate
                 all_audio.append(np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16))
@@ -107,16 +108,25 @@ def _set_tts_volume(val: float):
     global _tts_volume
     _tts_volume = max(0.0, min(1.0, val))
 
+def _set_tts_speed(val):
+    global _tts_speed
+    _tts_speed = max(40, min(200, int(val)))
+
+def _speed_to_length_scale() -> float:
+    """Переводит скорость (%) в length_scale Piper. 100% = 0.85 (текущий дефолт)."""
+    return 0.85 * 100.0 / max(40, min(200, _tts_speed))
+
 async def setup_tts_toggle(page):
-    """Экспортирует функцию переключения TTS в страницу."""
+    """Экспортирует функции управления TTS в страницу."""
     global _tts_exposed
     if not _tts_exposed:
         await page.expose_function("_py_set_tts", _set_tts_enabled)
         await page.expose_function("_py_set_tts_volume", _set_tts_volume)
+        await page.expose_function("_py_set_tts_speed", _set_tts_speed)
         _tts_exposed = True
 
 async def _inject_tts_panel(page):
-    """Инжектит панель TTS (mute + громкость) в DOM + MutationObserver для авто-восстановления."""
+    """Инжектит панель TTS (громкость + меню: озвучка/скорость) в DOM + MutationObserver для авто-восстановления."""
     try:
         has = await page.evaluate("!!document.getElementById('tts-panel')")
         if has:
@@ -130,37 +140,66 @@ async def _inject_tts_panel(page):
 var ID = 'tts-panel';
 var ON = '\\u{1F50A}';
 var OFF = '\\u{1F507}';
+var MENU = '\\u{2630}';
+if (!window._ttsState) window._ttsState = { volume: 80, enabled: true, speed: 100 };
+var S = window._ttsState;
 function makePanel(){
     var el = document.getElementById(ID);
     if (el) return el;
     var p = document.createElement('div');
     p.id = ID;
-    p.dataset.volume = '80';
     p.innerHTML = '<div style="display:flex;align-items:center;gap:6px">'
         + '<span id="tts-icon" style="cursor:pointer;font-size:20px;line-height:1">'+ON+'</span>'
         + '<input id="tts-vol" type="range" min="0" max="100" value="80" style="width:80px;cursor:pointer;vertical-align:middle;accent-color:#4CAF50">'
+        + '<span id="tts-menu-btn" style="cursor:pointer;font-size:16px;line-height:1;padding:0 3px;border-radius:4px">'+MENU+'</span>'
+        + '</div>'
+        + '<div id="tts-menu" style="display:none;margin-top:6px;border-top:1px solid #444;padding-top:6px;font-size:12px">'
+        +   '<label style="display:flex;align-items:center;gap:6px;cursor:pointer">'
+        +     '<input id="tts-enable" type="checkbox" style="accent-color:#4CAF50;cursor:pointer"> Озвучка включена'
+        +   '</label>'
+        +   '<div style="display:flex;align-items:center;gap:6px;margin-top:5px">'
+        +     '<span style="white-space:nowrap">Скорость</span>'
+        +     '<input id="tts-speed" type="range" min="50" max="150" value="100" style="flex:1;cursor:pointer;accent-color:#4CAF50">'
+        +     '<span id="tts-speed-label" style="width:38px;text-align:right">100%</span>'
+        +   '</div>'
         + '</div>';
-    p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:6px 10px;border-radius:8px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1';
+    p.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:#222;color:#fff;padding:6px 10px;border-radius:8px;user-select:none;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1;min-width:170px';
     document.body.appendChild(p);
     var icon = document.getElementById('tts-icon');
     var slider = document.getElementById('tts-vol');
+    var menuBtn = document.getElementById('tts-menu-btn');
+    var menu = document.getElementById('tts-menu');
+    var enable = document.getElementById('tts-enable');
+    var speed = document.getElementById('tts-speed');
+    var speedLabel = document.getElementById('tts-speed-label');
+    function push(){
+        if (window._py_set_tts) window._py_set_tts(S.enabled ? 1 : 0);
+        if (window._py_set_tts_volume) window._py_set_tts_volume(S.volume / 100);
+        if (window._py_set_tts_speed) window._py_set_tts_speed(S.speed);
+    }
     function sync(){
-        var v = parseInt(slider.value);
-        icon.innerHTML = v > 0 ? ON : OFF;
-        if (window._py_set_tts) window._py_set_tts(v > 0);
-        if (window._py_set_tts_volume) window._py_set_tts_volume(v / 100);
+        slider.value = S.volume;
+        enable.checked = S.enabled;
+        speed.value = S.speed;
+        speedLabel.textContent = S.speed + '%';
+        icon.innerHTML = (S.enabled && S.volume > 0) ? ON : OFF;
     }
     icon.onclick = function(){
-        var v = parseInt(slider.value);
-        slider.value = v > 0 ? '0' : p.dataset.volume;
-        sync();
+        if (S.volume > 0) { S.volume = 0; S.enabled = false; }
+        else { S.volume = parseInt(p.dataset.volume || '80'); S.enabled = true; }
+        sync(); push();
     };
     slider.oninput = function(){
-        var v = parseInt(this.value);
-        if (v > 0) p.dataset.volume = v;
-        sync();
+        S.volume = parseInt(this.value);
+        if (S.volume > 0) { p.dataset.volume = S.volume; S.enabled = true; }
+        sync(); push();
     };
-    sync();
+    menuBtn.onclick = function(){
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    };
+    enable.onchange = function(){ S.enabled = this.checked; sync(); push(); };
+    speed.oninput = function(){ S.speed = parseInt(this.value); sync(); push(); };
+    sync(); push();
     return p;
 }
 makePanel();
