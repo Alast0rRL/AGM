@@ -2041,8 +2041,6 @@ async def stage_free_chat(page, count, messages, state):
                             if state.russian_unhandled >= 3:
                                 log(f"  [Stage 3] Reset asked_russian (3 unhandled)")
                                 state.asked_russian = False
-                        if "?" not in t and not tl.startswith("кто"):
-                            await send_once(page, random.choice(RANDOM_RESPONSES["reaction"]), messages, state, role="own")
                         log(f"  [Stage 3] UNHANDLED: '{t}' (tl='{tl}')")
             lc = len(msgs)
             if state.partner_msg_count > 0:

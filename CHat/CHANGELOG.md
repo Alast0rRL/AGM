@@ -2,6 +2,9 @@
 
 ## 2026-07-31
 
+### Changed
+- **Убраны statement-reactions (Б.4)**: else-ветка UNHANDLED больше не отправляет реакции (`reaction`) на каждое непонятное сообщение без «?» — бот отвечал «Класс»/«Понял» на всё подряд. Остался только лог UNHANDLED.
+
 ### Added
 - **`RANDOM_RESPONSES`**: новый словарь с вариантами ответов для каждого типа триггера: `from_ask` (3 вар.), `what_doing` (3), `how_are_you` (3), `nice_to_meet` (3), `looking_for` (3), `age_answer` (3), `name_answer` (2), `name_ask` (3), `russian_confirm` (3), `compliment_reply` (3), `reaction` (5), `compliment` (5). Все хардкодные ответы заменены на `random.choice(...)`. Охвачены все 3 стадии. Все варианты уже содержат встречный вопрос (реципрокность, Б.2).
 - **Statement-reactions (Б.4)**: в else-ветку UNHANDLED добавлена отправка реакции (`reaction`) если сообщение партнёрши не содержит «?».
