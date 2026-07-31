@@ -17,7 +17,7 @@ from bot import (
     check_filters, ChatState, _can_send, save_chat_log,
     AGE_ASK_PATTERNS, NAME_ASK_PATTERNS, AND_YOU_PATTERNS,
     FROM_ASK_PATTERNS, HOW_ARE_YOU_PATTERNS, WHAT_ARE_YOU_DOING_PATTERNS,
-    NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, LOOKING_FOR_PATTERNS,
+    NICE_TO_MEET_PATTERNS, COMPLIMENT_PATTERNS, COMPLIMENT_THANKS_PATTERNS, LOOKING_FOR_PATTERNS,
     RUSSIAN_CONFIRM_PATTERNS, RUSSIAN_NOT_RUSSIAN_PATTERNS, RUSSIAN_DENY_PATTERNS,
     ZOVUT_PATTERNS, TG_CONTINUE_PATTERNS, TELL_ABOUT_PATTERNS,
     NON_RUSSIAN_NATIONALITIES,
@@ -303,6 +303,22 @@ assert_true("стрange имя", _compliment("стрange имя"))
 assert_false("просто привет", _compliment("привет"))
 assert_false("без имени", _compliment("тебя зовут"))
 
+# ===== COMPLIMENT_THANKS_PATTERNS (ответные комплименты) =====
+print("\n=== COMPLIMENT_THANKS_PATTERNS ===")
+def _compliment_thanks(t):
+    return any(p in t.lower() for p in COMPLIMENT_THANKS_PATTERNS)
+# Реальные реплики из лога
+assert_true("спасибо мне твоё тоже нравится", _compliment_thanks("Спасибо, мне твоё тоже нравится)"))
+assert_true("мне твоё тоже", _compliment_thanks("мне твоё тоже нравится"))
+assert_true("и тебе спасибо", _compliment_thanks("и тебе спасибо"))
+assert_true("тебе тоже)", _compliment_thanks("тебе тоже)"))
+assert_true("взаимно", _compliment_thanks("взаимно)"))
+# Ложные срабатывания
+assert_false("вопрос ты тоже в питере", _compliment_thanks("ты тоже в Питере?"))
+assert_false("мне тоже нравится гитара", _compliment_thanks("мне тоже нравится гитара"))
+assert_false("тебе сколько лет", _compliment_thanks("а тебе сколько лет?"))
+assert_false("просто привет", _compliment_thanks("привет"))
+
 # ===== LOOKING_FOR_PATTERNS =====
 print("\n=== LOOKING_FOR_PATTERNS ===")
 def _looking(t):
@@ -558,6 +574,7 @@ assert_eq("default name_sent", state.name_sent, False)
 assert_eq("default asked_russian", state.asked_russian, False)
 assert_eq("default confirmed_russian", state.confirmed_russian, False)
 assert_eq("default stage", state.stage, 1)
+assert_eq("default last_own_msg", state.last_own_msg, None)
 
 # ===== _SHORT_AND_YOU =====
 print("\n=== _SHORT_AND_YOU ===")
@@ -880,6 +897,13 @@ assert_false("None", is_non_russian(None))
 assert_false("обычный текст", is_non_russian("привет как дела"))
 assert_false("русская", is_non_russian("русская"))
 assert_false("вопрос про национальность", is_non_russian("а ты кто по национальности?"))
+# Кыргызстан: только текущее проживание
+assert_false("из кыргызстана приехала", is_non_russian("Я кстати, из Кыргызстана приехала)"))
+assert_false("родом из киргизии", is_non_russian("я родом из Киргизии"))
+assert_true("живу в кыргызстане", is_non_russian("я живу в Кыргызстане"))
+assert_true("в киргизии живу", is_non_russian("в Киргизии живу"))
+assert_true("живу в киргизии", is_non_russian("сейчас живу в Киргизии"))
+assert_false("вопрос про проживание", is_non_russian("ты в Кыргызстане живёшь?"))
 
 # ===== Резюме =====
 print(f"\n{'='*40}")

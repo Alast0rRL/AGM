@@ -584,6 +584,10 @@ COMPLIMENT_PATTERNS = [
     "классное имя", "интересное имя",
 ]
 
+COMPLIMENT_THANKS_PATTERNS = [
+    "твоё тоже", "тебе тоже", "взаимно", "и тебе спасибо",
+]
+
 RUSSIAN_CONFIRM_PATTERNS = [
     "да", "ага",
     "да, русская", "да русская",
@@ -625,6 +629,11 @@ def is_non_russian(text: str) -> bool:
     for nat in NON_RUSSIAN_NATIONALITIES:
         if nat in t:
             return True
+    # Кыргызстан/Киргизия — только если живёт там сейчас ("живу в кыргызстане"),
+    # НЕ "из Кыргызстана приехала" (происхождение, а не проживание)
+    if re.search(r'\b(живу|живёшь|живешь|живёт|живет|живём|живем)\b.*(кыргыз|киргиз)', t) or \
+       re.search(r'\b(кыргыз|киргиз).*\b(живу|живёшь|живешь|живёт|живет|живём|живем)\b', t):
+        return True
     return False
 
 TG_CONTINUE_PATTERNS = [
@@ -888,9 +897,9 @@ RANDOM_RESPONSES = {
         "Максим, тебя",
     ],
     "russian_confirm": [
-        "Приятно)",
+        "Супер)",
         "Отлично)",
-        "Класс)",
+        "Прикольно)",
     ],
     "compliment_reply": [
         "Спасибо)",
@@ -972,6 +981,7 @@ class ChatState:
     age_validated: bool = False
     asked_ethnicity: bool = False
     partner_msg_count: int = 0
+    last_own_msg: str = None
     _sent: set = field(default_factory=set)
 
 def _can_send(text: str, sent_set: set) -> bool:
@@ -987,6 +997,8 @@ async def send_once(page, text, messages, state, role="own"):
     await human_type(page, text)
     messages.append({"role": role, "content": text})
     state._sent.add(text)
+    if role in ("own", "self"):
+        state.last_own_msg = text
     return True
 
 async def backfill_self_messages(page, count, messages):
@@ -1774,6 +1786,11 @@ async def stage_free_chat(page, count, messages, state):
                 t = await msgs[i].inner_text()
                 r = await get_msg_role(page, msgs[i])
                 ro = "own" if r == "self" else "other"
+                if ro == "own":
+                    if t not in state._sent:
+                        log(f"  [Stage 3] own(manual): '{t}'")
+                    if any(m["role"] in ("own", "self") and m["content"] == t for m in messages):
+                        continue
                 messages.append({"role": ro, "content": t})
                 if ro == "other":
                     log(f"  [Stage 3] msg: '{t}'")
@@ -1896,12 +1913,20 @@ async def stage_free_chat(page, count, messages, state):
         msgs = await page.query_selector_all(MESSAGES)
         if len(msgs) > lc:
             await hover_msg(page, msgs[-1])
+            silence_sec = 0
+            partner_msg_seen = False
             for i in range(lc, len(msgs)):
                 t = await msgs[i].inner_text()
                 r = await get_msg_role(page, msgs[i])
                 ro = "own" if r == "self" else "other"
+                if ro == "own":
+                    if t not in state._sent:
+                        log(f"  [Stage 3] own(manual): '{t}'")
+                    if any(m["role"] in ("own", "self") and m["content"] == t for m in messages):
+                        continue
                 messages.append({"role": ro, "content": t})
                 if ro == "other":
+                    partner_msg_seen = True
                     log(f"  [Stage 3] msg: '{t}'")
                     await speak(t, female=True)
                     state.partner_msg_count += 1
@@ -1970,6 +1995,9 @@ async def stage_free_chat(page, count, messages, state):
                         break
                     elif any(p in tl for p in COMPLIMENT_PATTERNS):
                         log(f"  [Stage 3] TRIGGER: compliment -> 'спасибо)'")
+                        await send_once(page, random.choice(RANDOM_RESPONSES["compliment_reply"]), messages, state, role="own")
+                    elif "?" not in t and any(p in tl for p in COMPLIMENT_THANKS_PATTERNS):
+                        log(f"  [Stage 3] TRIGGER: compliment-thanks")
                         await send_once(page, random.choice(RANDOM_RESPONSES["compliment_reply"]), messages, state, role="own")
                     elif is_confirmation_question(t):
                         log(f"  [Stage 3] TRIGGER: confirmation -> 'да'")
@@ -2043,7 +2071,7 @@ async def stage_free_chat(page, count, messages, state):
                                 state.asked_russian = False
                         log(f"  [Stage 3] UNHANDLED: '{t}' (tl='{tl}')")
             lc = len(msgs)
-            if state.partner_msg_count > 0:
+            if partner_msg_seen and state.partner_msg_count > 0:
                 if state.partner_msg_count % 10 == 0:
                     log(f"  [Stage 3] COMPLIMENT: every-10")
                     await send_once(page, random.choice(RANDOM_RESPONSES["compliment"]), messages, state)
@@ -2053,16 +2081,11 @@ async def stage_free_chat(page, count, messages, state):
         else:
             silence_sec += 1
             if silence_sec >= 20:
-                last_own = None
-                for m in reversed(messages):
-                    if m["role"] in ("own", "self"):
-                        last_own = m["content"]
-                        break
-                bot_waiting = last_own and "?" in last_own
+                bot_waiting = state.last_own_msg and "?" in state.last_own_msg
                 if not bot_waiting:
                     log(f"  [Stage 3] TRIGGER: silence 20s -> 'Чо задумалась?'")
-                    if await send_once(page, "Чо задумалась?", messages, state, role="own"):
-                        silence_sec = 0
+                    await send_once(page, "Чо задумалась?", messages, state, role="own")
+                    silence_sec = 0
 
 UKRAINIAN_TRIGGERS = ["привiт", "привіт", "тобi", "тобі"]
 
